@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { categoria, tituloLimpo } from "@/lib/produto";
+import { Ic, Sidebar, Toasts, Topbar, ico, type Toast } from "@/lib/ui";
 import "../sistema.css";
 
 type Item = {
@@ -49,6 +51,19 @@ const VAZIO: Filtros = {
 const TAMANHO_PAGINA = 20;
 const vazio = "—";
 
+const ORDENS = [
+  { id: "ALFABETICA", rotulo: "Alfabética" },
+  { id: "CODIGO", rotulo: "Código" },
+  { id: "CLASSE", rotulo: "Classe" },
+  { id: "CODIGOFABRICANTE", rotulo: "Código Fabricante" },
+];
+
+const CHECKS: { id: "estoque" | "estoque_outras" | "estoque_cd"; rotulo: string; idDom: string }[] = [
+  { id: "estoque", rotulo: "Estoque na filial", idDom: "PesquisaProdutos_EstoqueDisponivelFilialCorrente" },
+  { id: "estoque_outras", rotulo: "Outras filiais", idDom: "PesquisaProdutos_EstoqueDisponivelOutrasFiliais" },
+  { id: "estoque_cd", rotulo: "CD (centro de distribuição)", idDom: "PesquisaProdutos_EstoqueDisponivelCD" },
+];
+
 function num(n: number | undefined) {
   return (n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
 }
@@ -71,6 +86,14 @@ export default function ConsultaPage() {
   const [detalhe, setDetalhe] = useState<Item | null>(null);
   const [lotes, setLotes] = useState<Lote[] | null>(null);
   const [lotesErro, setLotesErro] = useState("");
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [menuAberto, setMenuAberto] = useState(false);
+
+  const toast = useCallback((tipo: Toast["tipo"], titulo: string, desc?: string) => {
+    const id = Date.now() + Math.random();
+    setToasts((t) => [...t, { id, tipo, titulo, desc }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
+  }, []);
 
   useEffect(() => {
     const u = sessionStorage.getItem("ponta_usuario");
@@ -111,8 +134,10 @@ export default function ConsultaPage() {
           router.replace("/");
           return;
         }
+        // A sessão do ERP vive no servidor e morre quando o ASP.NET reinicia.
+        // Não é erro de rede: pedir para sair e entrar resolve.
         if (resp.status === 502 && /sessao|sessão/i.test(d?.erro || "")) {
-          setErro("⚠️ Sessão do ERP expirou. Saia e entre novamente.");
+          setErro("Sessão do ERP expirou. Saia e entre novamente.");
           setItens([]);
           return;
         }
@@ -123,7 +148,7 @@ export default function ConsultaPage() {
         setErro("");
       } catch (e: any) {
         setItens([]);
-        setErro("⚠️ " + (e?.message || "não foi possível consultar o ERP"));
+        setErro(e?.message || "não foi possível consultar o ERP");
       } finally {
         setBuscando(false);
       }
@@ -137,7 +162,7 @@ export default function ConsultaPage() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!filtros.codigo.trim() && !filtros.referencia.trim() && !filtros.descricao.trim()) {
-      setErro("⚠️ Informe ao menos código, referência ou descrição.");
+      setErro("Informe ao menos código, referência ou descrição.");
       setItens(null);
       return;
     }
@@ -149,6 +174,13 @@ export default function ConsultaPage() {
     if (p < 1 || buscando) return;
     setPagina(p);
     buscar(p);
+  }
+
+  function limpar() {
+    setFiltros(VAZIO);
+    setPagina(1);
+    setItens(null);
+    setErro("");
   }
 
   async function abrirLotes(p: Item) {
@@ -167,7 +199,7 @@ export default function ConsultaPage() {
       setLotes(d.lotes || []);
     } catch (e: any) {
       setLotes(null);
-      setLotesErro("⚠️ " + (e?.message || "não foi possível listar os lotes"));
+      setLotesErro(e?.message || "não foi possível listar os lotes");
     }
   }
 
@@ -179,279 +211,342 @@ export default function ConsultaPage() {
     router.replace("/");
   }
 
-  const temEstoqueTotal = itens?.some((i) => (i.estoque_total || 0) > 0);
-  const temEstoqueCD = itens?.some((i) => (i.estoque_cd || 0) > 0);
-  const temEstoqueOutras = itens?.some((i) => (i.estoque_outras || 0) > 0);
-  const temPreco = itens?.some((i) => (i.preco_unitario || 0) > 0);
-  const temClasse = itens?.some((i) => !!i.classe);
-  const temMedida = itens?.some((i) => !!i.medida);
+  // O ERP nem sempre devolve todas as colunas: se nenhum produto da página tem
+  // preço, mostrar a linha "Preço unit." em todo card vira ruído repetido 20
+  // vezes. Só renderiza o campo que tem dado em algum lugar da página.
+  const cols = useMemo(() => {
+    const lista = itens || [];
+    return {
+      preco: lista.some((i) => (i.preco_unitario || 0) > 0),
+      classe: lista.some((i) => !!i.classe),
+      medida: lista.some((i) => !!i.medida),
+      m2cx: lista.some((i) => (i.m2_caixa || 0) > 0),
+      total: lista.some((i) => (i.estoque_total || 0) > 0),
+      cd: lista.some((i) => (i.estoque_cd || 0) > 0),
+      outras: lista.some((i) => (i.estoque_outras || 0) > 0),
+      fornecedor: lista.some((i) => !!i.fornecedor),
+      classeValores: Array.from(new Set(lista.map((i) => i.classe).filter(Boolean))).sort() as string[],
+    };
+  }, [itens]);
+
+  const checksAtivos = (filtros.estoque ? 1 : 0) + (filtros.estoque_cd ? 1 : 0) + (filtros.estoque_outras ? 1 : 0);
+  const temFiltro = !!(filtros.codigo || filtros.referencia || filtros.descricao || filtros.ordem !== "ALFABETICA" || checksAtivos);
 
   return (
-    <>
-      <div className="header">
-        <h1>
-          <span>🔎</span> Consulta de Produtos
-        </h1>
-        <div className="acoes">
-          <span style={{ color: "var(--text-muted)", fontSize: 13, fontWeight: 500, marginRight: 4 }}>
-            Olá, {usuario}
-          </span>
-          <button className="btn secundario" onClick={() => router.push("/sistema")}>
-            ← Estoque
+    <div className={"shell" + (menuAberto ? " shell--drawer" : "")}>
+      <Sidebar
+        mini={false}
+        usuario={usuario}
+        ativo="consulta"
+        onNavegar={(r) => {
+          setMenuAberto(false);
+          router.push(r);
+        }}
+      />
+      {menuAberto && <button type="button" className="sidebar-fundo" onClick={() => setMenuAberto(false)} aria-label="Fechar menu" />}
+
+      <div className="main">
+        <Topbar titulo="Consulta de Produtos" subtitulo={usuario ? `Olá, ${usuario}` : undefined} onAbrirMenu={() => setMenuAberto(true)}>
+          <button type="button" className="btn" onClick={() => router.push("/sistema")}>
+            <Ic d={ico.seta_esq} /> <span className="rotulo">Voltar ao Estoque</span>
           </button>
-          <button className="btn secundario sair" onClick={sair}>
-            Sair
+          <div className="topbar-sep" />
+          <button type="button" className="btn-icone" onClick={() => toast("info", "Perfil", "Sessão de " + (usuario || "—"))} title="Perfil" aria-label="Perfil">
+            <Ic d={ico.usuario} />
           </button>
-        </div>
-      </div>
+          <button type="button" className="btn-icone perigo" onClick={sair} title="Sair" aria-label="Sair">
+            <Ic d={ico.sair} />
+          </button>
+        </Topbar>
 
-      <div className="corpo">
-        <form className="filtros glass" onSubmit={onSubmit}>
-          <div className="filtros-linha">
-            <div className="campo">
-              <label htmlFor="PesquisaProdutos_Codigo">Código</label>
-              <input
-                id="PesquisaProdutos_Codigo"
-                name="Codigo"
-                autoComplete="off"
-                maxLength={5}
-                value={filtros.codigo}
-                onChange={(e) => set("codigo", e.target.value.replace(/\D/g, ""))}
-              />
+        <main className="page">
+          <div className="pg-topo">
+            <div>
+              <h2>Consulta de Produtos</h2>
+              <p>Busque produtos direto no ERP por código, referência ou descrição.</p>
             </div>
-            <div className="campo">
-              <label htmlFor="PesquisaProdutos_Referencia">Referência</label>
-              <input
-                id="PesquisaProdutos_Referencia"
-                name="Referencia"
-                autoComplete="off"
-                maxLength={30}
-                value={filtros.referencia}
-                onChange={(e) => set("referencia", e.target.value)}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="PesquisaProdutos_Descricao">Descrição</label>
-              <input
-                id="PesquisaProdutos_Descricao"
-                name="Descricao"
-                maxLength={100}
-                placeholder="piso"
-                value={filtros.descricao}
-                onChange={(e) => set("descricao", e.target.value)}
-              />
-            </div>
-            <div className="campo">
-              <label htmlFor="PesquisaProdutos_Ordem">Ordem</label>
-              <select
-                id="PesquisaProdutos_Ordem"
-                name="Ordem"
-                value={filtros.ordem}
-                onChange={(e) => set("ordem", e.target.value)}
-              >
-                <option value="ALFABETICA">Alfabética</option>
-                <option value="CODIGO">Código</option>
-                <option value="CLASSE">Classe</option>
-                <option value="CODIGOFABRICANTE">Código Fabricante</option>
-              </select>
+            <div className="pg-topo-dir">
+              <span className={"pill " + (erro ? "pill--bad" : itens ? "pill--ok" : "pill--idle")}>
+                {erro ? "Erro" : itens ? `${itens.length} na página` : "Aguardando busca"}
+              </span>
             </div>
           </div>
 
-          <div className="filtros-linha">
-            <label className="check">
-              <input
-                type="checkbox"
-                id="PesquisaProdutos_EstoqueDisponivelFilialCorrente"
-                checked={filtros.estoque}
-                onChange={(e) => set("estoque", e.target.checked)}
-              />
-              Estoque Disponível
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                id="PesquisaProdutos_EstoqueDisponivelOutrasFiliais"
-                checked={filtros.estoque_outras}
-                onChange={(e) => set("estoque_outras", e.target.checked)}
-              />
-              Estoque Disponível Outras Filiais
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                id="PesquisaProdutos_EstoqueDisponivelCD"
-                checked={filtros.estoque_cd}
-                onChange={(e) => set("estoque_cd", e.target.checked)}
-              />
-              Estoque Disponível CD
-            </label>
-          </div>
+          {/* ---- Filtros ---- */}
+          <form className="filtros" onSubmit={onSubmit}>
+            <div className="filtros-linha">
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_Codigo">Código</label>
+                <input
+                  id="PesquisaProdutos_Codigo"
+                  name="Codigo"
+                  autoComplete="off"
+                  maxLength={5}
+                  inputMode="numeric"
+                  placeholder="12345"
+                  value={filtros.codigo}
+                  onChange={(e) => set("codigo", e.target.value.replace(/\D/g, ""))}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_Referencia">Referência</label>
+                <input
+                  id="PesquisaProdutos_Referencia"
+                  name="Referencia"
+                  autoComplete="off"
+                  maxLength={30}
+                  placeholder="Ref. do fabricante"
+                  value={filtros.referencia}
+                  onChange={(e) => set("referencia", e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_Descricao">Descrição</label>
+                <input
+                  id="PesquisaProdutos_Descricao"
+                  name="Descricao"
+                  maxLength={100}
+                  placeholder="piso, porcelanato…"
+                  value={filtros.descricao}
+                  onChange={(e) => set("descricao", e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_Ordem">Ordenar por</label>
+                <select
+                  id="PesquisaProdutos_Ordem"
+                  name="Ordem"
+                  value={filtros.ordem}
+                  onChange={(e) => set("ordem", e.target.value)}
+                >
+                  {ORDENS.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-          <div className="filtros-acoes">
-            <button type="submit" className="btn" disabled={buscando}>
-              {buscando ? "Pesquisando..." : "Pesquisar"}
-            </button>
-            <button
-              type="button"
-              className="btn secundario"
-              onClick={() => {
-                setFiltros(VAZIO);
-                setPagina(1);
-                setItens(null);
-                setErro("");
-              }}
-            >
-              Limpar
-            </button>
-          </div>
-        </form>
-
-        {erro && <div className="mensagem erro">{erro}</div>}
-
-        {itens && !erro && (
-          <div className="tabela-wrap glass">
-            <div className="cards">
-              {itens.map((i) => (
-                <article key={i.codigo} className="card" onClick={() => abrirLotes(i)}>
-                  <header className="card-topo">
-                    <span className="card-codigo">{i.codigo}</span>
-                    <span className="card-ref">{i.referencia || vazio}</span>
-                  </header>
-
-                  <h3 className="card-desc">{i.descricao || vazio}</h3>
-
-                  <div className="card-tags">
-                    {temMedida && i.medida && <span className="tag">{i.medida}</span>}
-                    {i.unidade && <span className="tag">{i.unidade}</span>}
-                    {temClasse && i.classe && <span className="tag">{i.classe}</span>}
-                  </div>
-
-                  <dl className="card-dados">
-                    {temPreco && (
-                      <div>
-                        <dt>Preço unit.</dt>
-                        <dd>{dinheiro(i.preco_unitario)}</dd>
-                      </div>
-                    )}
-                    {temPreco && (
-                      <div>
-                        <dt>Preço à vista</dt>
-                        <dd className="destaque-verde">{dinheiro(i.preco_vista)}</dd>
-                      </div>
-                    )}
-                    <div>
-                      <dt>Est. filial</dt>
-                      <dd>{num(i.estoque)}</dd>
-                    </div>
-                    {temEstoqueTotal && (i.estoque_total || 0) > 0 && (
-                      <div>
-                        <dt>Est. total</dt>
-                        <dd className="forte destaque-verde">{num(i.estoque_total)}</dd>
-                      </div>
-                    )}
-                    {temEstoqueCD && (i.estoque_cd || 0) > 0 && (
-                      <div>
-                        <dt>Est. CD</dt>
-                        <dd>{num(i.estoque_cd)}</dd>
-                      </div>
-                    )}
-                    {temEstoqueOutras && (i.estoque_outras || 0) > 0 && (
-                      <div>
-                        <dt>Outras filiais</dt>
-                        <dd>{num(i.estoque_outras)}</dd>
-                      </div>
-                    )}
-                    {i.m2_caixa ? (
-                      <div>
-                        <dt>Cx (m²)</dt>
-                        <dd>{num(i.m2_caixa)}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-
-                  <footer className="card-pe">
-                    <span className="card-forn" title={i.fornecedor || ""}>
-                      {i.fornecedor || vazio}
-                    </span>
-                    <button
-                      className="btn mini"
-                      title="Ver lotes"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        abrirLotes(i);
-                      }}
-                    >
-                      Lotes
-                    </button>
-                  </footer>
-                </article>
+            <div className="filtros-checks">
+              {CHECKS.map((c) => (
+                <label className="check" key={c.id}>
+                  <input
+                    type="checkbox"
+                    id={c.idDom}
+                    checked={filtros[c.id]}
+                    onChange={(e) => set(c.id, e.target.checked)}
+                  />
+                  {c.rotulo}
+                </label>
               ))}
             </div>
 
-            {itens.length === 0 && <div className="tabela-vazia">Nenhum produto encontrado.</div>}
-
-            {itens.length > 0 && (
-              <div className="paginacao">
-                <span className="paginacao-info">
-                  {itens.length} {itens.length === 1 ? "produto" : "produtos"}
-                  {total != null && ` de ${total}`}
+            <div className="filtros-acoes">
+              <button type="submit" className="btn" disabled={buscando}>
+                <Ic d={ico.busca} /> {buscando ? "Pesquisando…" : "Pesquisar"}
+              </button>
+              <button type="button" className="btn secundario" onClick={limpar} disabled={!temFiltro && !itens}>
+                Limpar
+              </button>
+              {itens && total != null && (
+                <span className="paginacao-info" style={{ marginLeft: "auto", alignSelf: "center" }}>
+                  <b>{itens.length}</b> de <b>{total}</b> produtos
                 </span>
-                <div className="paginacao-botoes">
-                  <button className="btn secundario" disabled={pagina <= 1 || buscando} onClick={() => irPara(pagina - 1)}>
-                    ‹ Anterior
-                  </button>
-                  <span className="paginacao-atual">
-                    Página <b>{pagina}</b>
-                    {total != null && ` de ${totalPaginas}`}
-                  </span>
-                  <button className="btn secundario" disabled={!podeAvancar || buscando} onClick={() => irPara(pagina + 1)}>
-                    Próxima ›
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          </form>
 
-        {!itens && !erro && !buscando && (
-          <div className="mensagem">
-            Preencha os filtros acima e clique em <b>Pesquisar</b>.
-          </div>
-        )}
+          {erro && <div className="mensagem erro">{erro}</div>}
+
+          {/* ---- Resultados ---- */}
+          {itens && !erro && (
+            <div className="painel">
+              <div className="painel-topo">
+                <span>
+                  Resultados da consulta · <b>{itens.length}</b> {itens.length === 1 ? "produto" : "produtos"} na página{" "}
+                  {total != null && <>de <b>{total}</b> no ERP</>}
+                </span>
+                {buscando && (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <div className="spinner" /> consultando…
+                  </span>
+                )}
+              </div>
+
+              <div className="cards" id="resultados">
+                {itens.map((i) => {
+                  const estoque = i.estoque || 0;
+                  const disponivel = estoque > 0;
+                  return (
+                    <article key={i.codigo} className="card card--erp">
+                      <div className="card-media card-media--baixa">
+                        <div className="card-media-erp">
+                          <span className="card-media-erp-titulo">{tituloLimpo(i.descricao) || "—"}</span>
+                          <span className="card-media-erp-cat">{categoria(i.descricao)}</span>
+                        </div>
+                        <span className={"badge badge-sobre " + (disponivel ? "badge--ok" : "badge--idle")}>
+                          {disponivel ? "Disponível" : "Sem estoque"}
+                        </span>
+                      </div>
+
+                      <div className="card-corpo">
+                        <div>
+                          <h3 className="card-nome">{tituloLimpo(i.descricao) || vazio}</h3>
+                          <div className="card-ref">
+                            Cód. {i.codigo}
+                            {i.referencia ? ` · Ref. ${i.referencia}` : ""}
+                          </div>
+                        </div>
+
+                        <div className="card-tags">
+                          {cols.medida && i.medida && <span className="tag">{i.medida}</span>}
+                          {i.unidade && <span className="tag">{i.unidade}</span>}
+                          {cols.classe && i.classe && <span className="tag tag--forte">{i.classe}</span>}
+                          {i.marca && <span className="tag">{i.marca}</span>}
+                        </div>
+
+                        <div className="metricas">
+                          <div className="metrica metrica--destaque">
+                            <div className="metrica-rotulo">Estoque na filial</div>
+                            <div className="metrica-valor">
+                              {num(estoque)} <small>{i.unidade || "un"}</small>
+                            </div>
+                          </div>
+                          {cols.preco && (
+                            <div className="metrica metrica--caixa">
+                              <div className="metrica-rotulo">Preço unit.</div>
+                              <div className="metrica-valor" style={{ fontSize: 18 }}>
+                                {dinheiro(i.preco_unitario)}
+                              </div>
+                            </div>
+                          )}
+                          {cols.m2cx && i.m2_caixa ? (
+                            <div className="metrica">
+                              <div className="metrica-rotulo">Caixa</div>
+                              <div className="metrica-valor">{num(i.m2_caixa)} m²</div>
+                            </div>
+                          ) : null}
+                          {cols.total && (i.estoque_total || 0) > 0 && (
+                            <div className="metrica">
+                              <div className="metrica-rotulo">Est. total</div>
+                              <div className="metrica-valor" style={{ color: "var(--ok)" }}>
+                                {num(i.estoque_total)}
+                              </div>
+                            </div>
+                          )}
+                          {cols.cd && (i.estoque_cd || 0) > 0 && (
+                            <div className="metrica">
+                              <div className="metrica-rotulo">CD</div>
+                              <div className="metrica-valor">{num(i.estoque_cd)}</div>
+                            </div>
+                          )}
+                          {cols.outras && (i.estoque_outras || 0) > 0 && (
+                            <div className="metrica">
+                              <div className="metrica-rotulo">Outras filiais</div>
+                              <div className="metrica-valor">{num(i.estoque_outras)}</div>
+                            </div>
+                          )}
+                        </div>
+
+                        {cols.preco && i.preco_vista ? (
+                          <div className="divergencia divergencia--ok">
+                            <Ic d={ico.moeda} /> À vista: {dinheiro(i.preco_vista)}
+                          </div>
+                        ) : null}
+
+                        <div className="card-pe">
+                          <span className="card-forn" title={i.fornecedor || ""}>
+                            {cols.fornecedor ? i.fornecedor || vazio : i.classe || vazio}
+                          </span>
+                          <div className="card-acoes">
+                            <button type="button" className="btn secundario mini" onClick={() => abrirLotes(i)}>
+                              <Ic d={ico.camadas_min} /> Lotes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {itens.length === 0 && <div className="tabela-vazia">Nenhum produto encontrado.</div>}
+
+              {itens.length > 0 && (
+                <div className="paginacao">
+                  <span className="paginacao-info">
+                    <b>{itens.length}</b> {itens.length === 1 ? "produto" : "produtos"}
+                    {total != null && ` de ${total}`}
+                  </span>
+                  <div className="paginacao-botoes">
+                    <button type="button" className="btn secundario mini" disabled={pagina <= 1 || buscando} onClick={() => irPara(pagina - 1)}>
+                      <Ic d={ico.seta_esq} /> Anterior
+                    </button>
+                    <span className="paginacao-atual">
+                      Página <b>{pagina}</b>
+                      {total != null && ` de ${totalPaginas}`}
+                    </span>
+                    <button type="button" className="btn secundario mini" disabled={!podeAvancar || buscando} onClick={() => irPara(pagina + 1)}>
+                      Próxima <Ic d={ico.seta_dir} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!itens && !erro && !buscando && (
+            <div className="vazio">
+              <div className="vazio-icone">
+                <Ic d={ico.lupa} />
+              </div>
+              <h3>Consulte o catálogo do ERP</h3>
+              <p>Informe código, referência ou descrição e clique em Pesquisar para ver preços e estoque em tempo real.</p>
+            </div>
+          )}
+        </main>
       </div>
 
       {detalhe && (
         <div className="modal" onClick={(e) => e.target === e.currentTarget && setDetalhe(null)}>
-          <div className="modal-conteudo glass">
+          <div className="modal-conteudo">
             <h2>
-              {detalhe.codigo} — {detalhe.descricao}
+              <Ic d={ico.camadas} /> {detalhe.codigo} — {tituloLimpo(detalhe.descricao)}
             </h2>
             {lotesErro && <div className="aviso">{lotesErro}</div>}
             {!lotes && !lotesErro && (
               <div className="mensagem">
-                <div className="spinner"></div>
+                <div className="spinner" />
                 <div>Carregando lotes do ERP…</div>
               </div>
             )}
             {lotes && lotes.length === 0 && <div className="mensagem">Produto sem lotes (estoque único).</div>}
-            {lotes &&
-              lotes.map((l) => (
-                <div key={l.lote + (l.filial || "")} className="metric-row">
-                  <span>
-                    {l.lote}
-                    {l.filial ? ` · filial ${l.filial}` : ""}
-                  </span>
-                  <strong className="destaque-verde">{num(l.disponivel)} m²</strong>
-                </div>
-              ))}
+            {lotes && lotes.length > 0 && (
+              <div className="metric-row">
+                {lotes.map((l) => (
+                  <div className="metrica" key={l.lote + (l.filial || "")}>
+                    <div className="metrica-rotulo">{l.filial ? "Filial " + l.filial : "Lote"}</div>
+                    <div className="metrica-valor" style={{ fontSize: 19 }}>
+                      {l.lote}
+                    </div>
+                    <div className="metrica-valor" style={{ fontSize: 15, color: "var(--ok)", marginTop: 2 }}>
+                      {num(l.disponivel)} {detalhe.unidade || "m²"} disponíveis
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="modal-acoes">
-              <button className="btn secundario" onClick={() => setDetalhe(null)}>
+              <button type="button" className="btn secundario" onClick={() => setDetalhe(null)}>
                 Fechar
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+
+      <Toasts itens={toasts} />
+    </div>
   );
 }
