@@ -25,7 +25,10 @@ Já existe o dump em `backup/dump_ponta_estoque.sql`. Para restaurar:
 docker exec -i ponta-dev-pg psql -U ponta_app -d ponta_estoque < backup/dump_ponta_estoque.sql
 ```
 
-Fotos: copie `backup/fotos/*` para `public/fotos/` (o app serve desse diretório).
+Fotos: as fotos de produto ficam em `fotos/` na raiz e são servidas pela rota
+`app/fotos/[nome]/route.ts`. **Não** voltam para `public/`: o `next start` serve
+`public/` de um retrato tirado no boot, e todo upload gravado depois do start
+voltaria 404 até o processo reiniciar.
 
 Em produção, veja `backup/MIGRACAO_VPS.md`.
 
@@ -75,6 +78,8 @@ npm start
   o login, guarda o cookie e o reenvia. Resposta em HTML = sessão expirada (o ERP
   não devolve 401).
 - Sessão em memória (`lib/erp.ts`): single-user, reinicia ao reiniciar o app.
-- Fotos em disco (`public/fotos/`), servidas pelo próprio Next.
+- Fotos em disco (`fotos/` na raiz), servidas por `app/fotos/[nome]/route.ts`.
+  Fora do `public/` de propósito: o retrato de `public/` que o `next start` faz
+  no boot faria todo upload posterior devolver 404.
 - Lógica compartilhada fica em `lib/` — import entre arquivos `route.ts` não funciona.
 - Backup: `pg_dump ponta_estoque > backup_$(date +%F).sql`

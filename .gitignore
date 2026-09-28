@@ -3,5 +3,5 @@ node_modules
 .env.local
 *.log
 # Fotos de produto são gravadas em runtime por /api/upload; não versionar.
-public/fotos/*
-!public/fotos/.gitkeep
+fotos/*
+!fotos/.gitkeep
