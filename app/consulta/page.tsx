@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { categoria, tituloLimpo } from "@/lib/produto";
-import { Ic, Sidebar, Toasts, Topbar, ico, type Toast } from "@/lib/ui";
+import { Ic, Sidebar, Toasts, Topbar, ico, useEsc, type Toast } from "@/lib/ui";
 import "../sistema.css";
 
 type Item = {
@@ -88,6 +88,9 @@ export default function ConsultaPage() {
   const [lotesErro, setLotesErro] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menuAberto, setMenuAberto] = useState(false);
+
+  useEsc(() => setDetalhe(null), !!detalhe);
+  useEsc(() => setMenuAberto(false), menuAberto);
 
   const toast = useCallback((tipo: Toast["tipo"], titulo: string, desc?: string) => {
     const id = Date.now() + Math.random();
