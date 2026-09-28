@@ -1,0 +1,209 @@
+/* Tela de login. Prefixo .login- em tudo: globals.css é global e sistema.css
+   (tema dark) também estiliza body/input, então classes sem prefixo brigariam. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --login-bg: #090d16;
+  --login-surface: rgba(255, 255, 255, 0.04);
+  --login-border: rgba(255, 255, 255, 0.09);
+  --login-text: #f1f5f9;
+  --login-muted: #94a3b8;
+  --login-accent: #3b82f6;
+  --login-accent-2: #6366f1;
+  --login-danger: #f87171;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: var(--login-text);
+  background-color: var(--login-bg);
+  background-image:
+    radial-gradient(900px 520px at 10% -12%, rgba(59, 130, 246, 0.24), transparent 62%),
+    radial-gradient(820px 520px at 108% 112%, rgba(99, 102, 241, 0.20), transparent 62%),
+    radial-gradient(620px 420px at 88% 0%, rgba(16, 185, 129, 0.10), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+.login-tela {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px 26px;
+  background: var(--login-surface);
+  border: 1px solid var(--login-border);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.login-marca {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-bottom: 26px;
+}
+
+.login-icone {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-2));
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.35);
+}
+
+.login-icone svg {
+  width: 22px;
+  height: 22px;
+  fill: #fff;
+}
+
+.login-titulo {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+
+.login-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--login-muted);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-form label {
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--login-muted);
+}
+
+.login-form input[type="text"],
+.login-form input[type="password"] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--login-text);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--login-border);
+  border-radius: 10px;
+  outline: none;
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+
+.login-form input::placeholder {
+  color: #64748b;
+}
+
+.login-form input:focus {
+  border-color: var(--login-accent);
+  background: rgba(0, 0, 0, 0.42);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+/* readOnly trava o preenchimento automático até o campo ganhar foco. */
+.login-form input[readonly] {
+  cursor: text;
+}
+
+.login-caps {
+  margin-top: 6px;
+  min-height: 14px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+
+/* Button */
+.login-botao {
+  margin-top: 22px;
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #fff;
+  background: linear-gradient(135deg, var(--login-accent), var(--login-accent-2));
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(59, 130, 246, 0.3);
+  transition: transform 0.18s, box-shadow 0.18s, opacity 0.18s;
+}
+
+.login-botao:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(59, 130, 246, 0.45);
+}
+
+.login-botao:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Error */
+.login-erro {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--login-danger);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 10px;
+}
+
+.login-erro svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: currentColor;
+}
+
+.login-rodape {
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid var(--login-border);
+  font-size: 11px;
+  color: #64748b;
+  text-align: center;
+}
+
+/* Hidden anti-autofill inputs */
+.sr-only {
+  position: absolute;
+  left: -9999px;
+  opacity: 0;
+  height: 0;
+  width: 0;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .login-tela {
+    padding: 16px;
+  }
+  .login-card {
+    padding: 28px 22px 22px;
+  }
+}
