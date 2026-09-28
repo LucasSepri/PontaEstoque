@@ -36,6 +36,12 @@ type Filtros = {
   estoque: boolean;
   estoque_outras: boolean;
   estoque_cd: boolean;
+  // m² por caixa (de/até) e quantidade mínima de caixas. O ERP não filtra por
+  // nenhum desses: quem filtra é o servidor, varrendo o catálogo inteiro
+  // (lib/catalogo.ts). Por isso a busca precisa ser reenviada ao mudar o campo.
+  m2_min: string;
+  m2_max: string;
+  cx_min: string;
 };
 
 const VAZIO: Filtros = {
@@ -46,6 +52,9 @@ const VAZIO: Filtros = {
   estoque: false,
   estoque_outras: false,
   estoque_cd: false,
+  m2_min: "",
+  m2_max: "",
+  cx_min: "",
 };
 
 const TAMANHO_PAGINA = 20;
@@ -73,6 +82,12 @@ function dinheiro(n: number | undefined) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// "2,43" e "2.43" são a mesma metragem; string vazia é "sem filtro" (null, não 0).
+function numero(s: string): number | null {
+  const v = parseFloat(String(s).trim().replace(",", "."));
+  return isNaN(v) ? null : v;
+}
+
 export default function ConsultaPage() {
   const router = useRouter();
   const [filtros, setFiltros] = useState<Filtros>(VAZIO);
@@ -80,6 +95,7 @@ export default function ConsultaPage() {
   const [pagina, setPagina] = useState(1);
   const [total, setTotal] = useState<number | null>(null);
   const [temProxima, setTemProxima] = useState<boolean | null>(null);
+  const [varridos, setVarridos] = useState<number | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState("");
   const [usuario, setUsuario] = useState("");
@@ -130,6 +146,9 @@ export default function ConsultaPage() {
         if (filtros.estoque) q.set("estoque", "1");
         if (filtros.estoque_cd) q.set("estoque_cd", "1");
         if (filtros.estoque_outras) q.set("estoque_outras", "1");
+        if (filtros.m2_min) q.set("m2_min", filtros.m2_min);
+        if (filtros.m2_max) q.set("m2_max", filtros.m2_max);
+        if (filtros.cx_min) q.set("cx_min", filtros.cx_min);
         const resp = await fetch("/api/buscar?" + q);
         const d = await resp.json().catch(() => ({}));
         if (resp.status === 401) {
@@ -148,6 +167,7 @@ export default function ConsultaPage() {
         setItens(d.itens || []);
         setTotal(typeof d.total === "number" ? d.total : null);
         setTemProxima(typeof d.temProxima === "boolean" ? d.temProxima : null);
+        setVarridos(typeof d.varridos === "number" ? d.varridos : null);
         setErro("");
       } catch (e: any) {
         setItens([]);
@@ -233,7 +253,18 @@ export default function ConsultaPage() {
   }, [itens]);
 
   const checksAtivos = (filtros.estoque ? 1 : 0) + (filtros.estoque_cd ? 1 : 0) + (filtros.estoque_outras ? 1 : 0);
-  const temFiltro = !!(filtros.codigo || filtros.referencia || filtros.descricao || filtros.ordem !== "ALFABETICA" || checksAtivos);
+  const temFiltro = !!(
+    filtros.codigo ||
+    filtros.referencia ||
+    filtros.descricao ||
+    filtros.ordem !== "ALFABETICA" ||
+    checksAtivos ||
+    filtros.m2_min ||
+    filtros.m2_max ||
+    filtros.cx_min
+  );
+  const cxMinNum = numero(filtros.cx_min);
+  const temFiltroCaixa = numero(filtros.m2_min) != null || numero(filtros.m2_max) != null || cxMinNum != null;
 
   return (
     <div className={"shell" + (menuAberto ? " shell--drawer" : "")}>
@@ -345,6 +376,47 @@ export default function ConsultaPage() {
               ))}
             </div>
 
+            <div className="filtros-linha">
+              <div className="campo">
+                <label htmlFor="FiltroM2Min">m² por caixa (de)</label>
+                <input
+                  id="FiltroM2Min"
+                  inputMode="decimal"
+                  placeholder="2,00"
+                  value={filtros.m2_min}
+                  onChange={(e) => set("m2_min", e.target.value.replace(/[^\d.,]/g, ""))}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="FiltroM2Max">m² por caixa (até)</label>
+                <input
+                  id="FiltroM2Max"
+                  inputMode="decimal"
+                  placeholder="2,50"
+                  value={filtros.m2_max}
+                  onChange={(e) => set("m2_max", e.target.value.replace(/[^\d.,]/g, ""))}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="FiltroCxMin">Mínimo de caixas em estoque</label>
+                <input
+                  id="FiltroCxMin"
+                  inputMode="decimal"
+                  placeholder="10"
+                  value={filtros.cx_min}
+                  onChange={(e) => set("cx_min", e.target.value.replace(/[^\d.,]/g, ""))}
+                />
+              </div>
+              <div className="campo" style={{ flex: "2 1 260px" }}>
+                <small className="dica">
+                  O ERP não filtra por m² nem por caixas. Estes campos fazem o servidor varrer
+                  todo o resultado da busca e filtrar em memória — a primeira busca leva alguns
+                  segundos, as seguintes usam cache. Clique em <b>Pesquisar</b> depois de mexer
+                  aqui.
+                </small>
+              </div>
+            </div>
+
             <div className="filtros-acoes">
               <button type="submit" className="btn" disabled={buscando}>
                 <Ic d={ico.busca} /> {buscando ? "Pesquisando…" : "Pesquisar"}
@@ -367,18 +439,29 @@ export default function ConsultaPage() {
             <div className="painel">
               <div className="painel-topo">
                 <span>
-                  Resultados da consulta · <b>{itens.length}</b> {itens.length === 1 ? "produto" : "produtos"} na página{" "}
-                  {total != null && <>de <b>{total}</b> no ERP</>}
+                  {varridos != null && varridos > 0 ? (
+                    <>
+                      <b>{total}</b> {total === 1 ? "produto" : "produtos"} com o filtro de m²/caixas ·{" "}
+                      <b>{varridos}</b> analisados
+                    </>
+                  ) : (
+                    <>
+                      Resultados da consulta · <b>{itens.length}</b>{" "}
+                      {itens.length === 1 ? "produto" : "produtos"} na página{" "}
+                      {total != null && <>de <b>{total}</b> no ERP</>}
+                    </>
+                  )}
                 </span>
                 {buscando && (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <div className="spinner" /> consultando…
+                    <div className="spinner" />{" "}
+                    {temFiltroCaixa ? "varrendo o catálogo no ERP (pode demorar)…" : "consultando…"}
                   </span>
                 )}
               </div>
 
               <div className="cards" id="resultados">
-                {itens.map((i) => {
+                {(itens || []).map((i) => {
                   const estoque = i.estoque || 0;
                   const disponivel = estoque > 0;
                   return (
@@ -428,6 +511,11 @@ export default function ConsultaPage() {
                             <div className="metrica">
                               <div className="metrica-rotulo">Caixa</div>
                               <div className="metrica-valor">{num(i.m2_caixa)} m²</div>
+                              {cxMinNum != null && estoque > 0 && (
+                                <div className="metrica-valor" style={{ fontSize: 13, color: "var(--txt-3)" }}>
+                                  ≈ {num(estoque / (i.m2_caixa || 1))} cx
+                                </div>
+                              )}
                             </div>
                           ) : null}
                           {cols.total && (i.estoque_total || 0) > 0 && (
@@ -474,7 +562,13 @@ export default function ConsultaPage() {
                 })}
               </div>
 
-              {itens.length === 0 && <div className="tabela-vazia">Nenhum produto encontrado.</div>}
+              {itens.length === 0 && (
+                <div className="tabela-vazia">
+                  {temFiltroCaixa
+                    ? "Nenhum produto do ERP bate com esse filtro de m²/caixas. A busca acima já varreu todo o resultado — tente outro m² ou outra descrição."
+                    : "Nenhum produto encontrado."}
+                </div>
+              )}
 
               {itens.length > 0 && (
                 <div className="paginacao">

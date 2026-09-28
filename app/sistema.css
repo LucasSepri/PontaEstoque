@@ -2090,6 +2090,11 @@ dialog.zoom-foto::backdrop {
   /* `auto` e não `hidden`: é o que torna o scroll/pan possível quando a
      imagem fica maior que a área. */
   overflow: auto;
+  /* Sem isto o browser consome o gesto como zoom da própria página e a pinça
+     não chega no pointermove. `none` mata também o scroll nativo, que aqui é
+     substituído pelo pan em transform. */
+  touch-action: none;
+  overscroll-behavior: contain;
   padding: clamp(12px, 3vh, 40px);
   box-sizing: border-box;
 }
@@ -2105,6 +2110,8 @@ dialog.zoom-foto::backdrop {
   transition: transform 0.15s ease-out;
   user-select: none;
   -webkit-user-drag: none;
+  /* pinça de 2 dedos também dispara o zoom nativo se não for travado */
+  touch-action: none;
   cursor: zoom-in;
 }
 

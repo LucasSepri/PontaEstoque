@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { m2PorCaixa } from "@/lib/m2caixa";
+import { criarGesto, type Estado, type Gesto } from "@/lib/gestoZoom";
 import {
   CATEGORIAS,
   STATUS_INFO,
@@ -670,7 +671,13 @@ function CardPonta({
   // imagem presa no centro, sem como olhar as bordas. O pan em translate
   // compensa — fewest code que faz o zoom ser realmente útil.
   const [pos, setPos] = useState({ x: 0, y: 0 });
-  const arrasto = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  // Espelho do estado: o listener vive num useEffect com [zoomAberto] e não
+  // pode ler o state sem se recriar a cada zoom, no meio do gesto.
+  const st = useRef({ escala: 1, pos: { x: 0, y: 0 } });
+  st.current = { escala, pos };
+  // Pinça no mobile dispara um `click` no fim do gesto, e o "clique fora fecha"
+  // derrubaria o zoom junto. Ignorar os cliques que chegarem logo após um gesto.
+  const fimGesto = useRef(0);
   const zoomRef = useRef<HTMLDialogElement>(null);
 
   // O `cancel` nativo do <dialog> não chega ao keydown do window em todo
@@ -693,18 +700,79 @@ function CardPonta({
     }
   }, [zoomAberto]);
 
-  // onWheel é passivo por padrão no React: o preventDefault seria ignorado e a
-  // página inteira rolaria junto com o zoom. `passive: false` é obrigatório.
+  // Pinça (zoom) e arrasto (pan) por Pointer Events, num listener só no
+  // <dialog> em vez de seis handlers na <img>: o dedo sai da área da imagem
+  // durante o gesto e o ponteiro ainda precisa ser acompanhado. A regra do
+  // gesto (pinça de 2 dedos, pan de 1, reancoragem quando um dedo levanta) mora
+  // em `lib/gestoZoom.ts` — este efeito é só a cola com o DOM.
+  //
+  // A máquina precisa ser criada por *gesto*, não por abertura do dialog: quem
+  // decide se o arrasto de 1 dedo engata é a escala que ela conhece, e a escala
+  // muda por fora dela (roda, botão +/-, duplo clique). Reusar uma instância
+  // presa no `[zoomAberto]` deixava a máquina em 1x para sempre — o sintoma era
+  // "só consigo deslocar com dois dedos", porque só a pinça atualiza a escala
+  // de dentro da máquina.
+  const gestoRef = useRef<Gesto | null>(null);
+  const aplicar = (e: Estado | null) => {
+    if (!e) return;
+    st.current = e;
+    setEscala(e.escala);
+    setPos(e.pos);
+  };
+  useEffect(() => {
+    const dlg = zoomRef.current;
+    if (!zoomAberto || !dlg) return;
+    const gesto = criarGesto(dlg.getBoundingClientRect(), st.current);
+    gestoRef.current = gesto;
+    const aoBaixar = (e: PointerEvent) => gesto.down(e.pointerId, e.clientX, e.clientY);
+    const aoMover = (e: PointerEvent) => {
+      if (gesto.move(e.pointerId, e.clientX, e.clientY)) e.preventDefault();
+      aplicar(gesto.estado());
+    };
+    const encerrar = (e: PointerEvent) => {
+      gesto.up(e.pointerId);
+      // Pinça no mobile dispara um `click` no fim do gesto, e o "clique fora
+      // fecha" derrubaria o zoom junto. Guardar o instante do gesto é o filtro.
+      fimGesto.current = gesto.dedos() > 0 ? performance.now() : 0;
+    };
+    dlg.addEventListener("pointerdown", aoBaixar);
+    dlg.addEventListener("pointermove", aoMover, { passive: false });
+    dlg.addEventListener("pointerup", encerrar);
+    dlg.addEventListener("pointercancel", encerrar);
+    return () => {
+      gestoRef.current = null;
+      dlg.removeEventListener("pointerdown", aoBaixar);
+      dlg.removeEventListener("pointermove", aoMover);
+      dlg.removeEventListener("pointerup", encerrar);
+      dlg.removeEventListener("pointercancel", encerrar);
+    };
+  }, [zoomAberto]);
+
+  // Zoom por fora do gesto (roda, botões, duplo clique) tem que avisar a
+  // máquina, senão ela continua achando que o zoom está em 1x e o arrasto de
+  // 1 dedo não engata.
+  const mudarEscala = (nova: number) => aplicar(gestoRef.current?.ajustar(nova) ?? null);
+  const ajustar = (f: (s: number) => number) => () => {
+    const nova = f(escala);
+    if (gestoRef.current) mudarEscala(nova);
+    else {
+      const e = { escala: nova, pos };
+      st.current = e;
+      setEscala(nova);
+      if (nova === 1) setPos({ x: 0, y: 0 });
+    }
+  };
+
   useEffect(() => {
     const dlg = zoomRef.current;
     if (!zoomAberto || !dlg) return;
     const aoRolar = (e: WheelEvent) => {
       e.preventDefault();
-      setEscala((s) => Math.min(8, Math.max(1, s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))));
+      ajustar((s) => s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))();
     };
     dlg.addEventListener("wheel", aoRolar, { passive: false });
     return () => dlg.removeEventListener("wheel", aoRolar);
-  }, [zoomAberto]);
+  }, [zoomAberto, escala, pos]);
 
   return (
     <article className="card">
@@ -792,10 +860,10 @@ function CardPonta({
         <dialog
           ref={zoomRef}
           className="zoom-foto"
-          onClick={(e) => e.target === e.currentTarget && setZoomAberto(false)}
+          onClick={(e) => e.target === e.currentTarget && performance.now() - fimGesto.current > 400 && setZoomAberto(false)}
           onClose={() => setZoomAberto(false)}
         >
-          <div className="zoom-area" onClick={() => escala === 1 && setZoomAberto(false)}>
+          <div className="zoom-area" onClick={() => escala === 1 && performance.now() - fimGesto.current > 400 && setZoomAberto(false)}>
             <img
               src={urlFoto}
               alt={titulo}
@@ -803,20 +871,9 @@ function CardPonta({
               style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${escala})` }}
               onClick={(e) => e.stopPropagation()}
               onDoubleClick={() => {
-                setEscala((s) => (s > 1 ? 1 : 3));
+                ajustar((s) => (s > 1 ? 1 : 3))();
                 setPos({ x: 0, y: 0 });
               }}
-              onMouseDown={(e) => {
-                if (escala <= 1) return;
-                arrasto.current = { x: e.clientX, y: e.clientY, ox: pos.x, oy: pos.y };
-              }}
-              onMouseMove={(e) => {
-                const a = arrasto.current;
-                if (!a) return;
-                setPos({ x: a.ox + e.clientX - a.x, y: a.oy + e.clientY - a.y });
-              }}
-              onMouseUp={() => (arrasto.current = null)}
-              onMouseLeave={() => (arrasto.current = null)}
             />
           </div>
           <div className="zoom-bar">
@@ -824,20 +881,20 @@ function CardPonta({
               {titulo} · {ponta.lote || "sem lote"}
             </span>
             <span className="zoom-nivel">{Math.round(escala * 100)}%</span>
-            <button type="button" className="btn secundario mini" onClick={() => { setEscala((s) => Math.max(1, s - 0.5)); setPos({ x: 0, y: 0 }); }} aria-label="Diminuir zoom">
+            <button type="button" className="btn secundario mini" onClick={ajustar((s) => Math.max(1, s - 0.5))} aria-label="Diminuir zoom">
               −
             </button>
-            <button type="button" className="btn secundario mini" onClick={() => { setEscala((s) => Math.min(8, s + 0.5)); setPos({ x: 0, y: 0 }); }} aria-label="Aumentar zoom">
+            <button type="button" className="btn secundario mini" onClick={ajustar((s) => Math.min(8, s + 0.5))} aria-label="Aumentar zoom">
               +
             </button>
-            <button type="button" className="btn secundario mini" onClick={() => { setEscala(1); setPos({ x: 0, y: 0 }); }}>
+            <button type="button" className="btn secundario mini" onClick={ajustar(() => 1)}>
               Ajustar
             </button>
             <button type="button" className="btn secundario mini" onClick={() => setZoomAberto(false)}>
               Fechar
             </button>
           </div>
-          <div className="zoom-dica">Scroll do mouse amplia · duplo clique alterna 1x/3x · ESC fecha</div>
+          <div className="zoom-dica">Scroll ou pinça amplia · arraste para deslocar · duplo clique alterna 1x/3x · ESC fecha</div>
         </dialog>
       )}
     </article>
