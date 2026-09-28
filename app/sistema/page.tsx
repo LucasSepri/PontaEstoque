@@ -15,7 +15,7 @@ import {
   type Categoria,
   type StatusEstoque,
 } from "@/lib/produto";
-import { Ic, Sidebar, Toasts, Topbar, ico, type Toast } from "@/lib/ui";
+import { Ic, Sidebar, Toasts, Topbar, ico, useEsc, type Toast } from "@/lib/ui";
 import "../sistema.css";
 
 type Ponta = {
@@ -165,6 +165,8 @@ export default function SistemaPage() {
   const [editando, setEditando] = useState<Ponta | null>(null);
   const [menuAberto, setMenuAberto] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEsc(() => setMenuAberto(false), menuAberto);
 
   // Filtros
   const [cat, setCat] = useState<FiltroCategoria>("Todos");
@@ -671,6 +673,10 @@ function CardPonta({
   const arrasto = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const zoomRef = useRef<HTMLDialogElement>(null);
 
+  // O `cancel` nativo do <dialog> não chega ao keydown do window em todo
+  // ambiente, e a dica da barra promete "ESC fecha" — quem garante é este hook.
+  useEsc(() => setZoomAberto(false), zoomAberto);
+
   // showModal() e não o atributo `open`: o dialog fica no top layer, imune ao
   // `overflow: hidden` do .card. Em troca ganha ESC e ::backdrop de graça.
   useEffect(() => {
@@ -865,6 +871,8 @@ function ModalEdicao({
   const [aviso, setAviso] = useState("");
   const [salvando, setSalvando] = useState(false);
 
+  useEsc(onClose);
+
   const metrosPorCaixa = m2Caixa(ponta.descricao, ponta.metros_por_caixa);
   const cxPossivel = metrosPorCaixa > 0;
   const qtdM2 =
@@ -1056,6 +1064,7 @@ function ModalEdicao({
 }
 
 function ModalCadastro({ onClose, onSalvo }: { onClose: () => void; onSalvo: () => void }) {
+  useEsc(onClose);
   const [imagem, setImagem] = useState<{ base64: string; nome: string; tipo: string } | null>(null);
   const [preview, setPreview] = useState("");
   const [quantidade, setQuantidade] = useState("");
@@ -1313,6 +1322,7 @@ function ModalCadastro({ onClose, onSalvo }: { onClose: () => void; onSalvo: () 
 // cadastro. Evita duplicar o formulário de filtros — o /sistema já tem o picker
 // inteiro, não precisa de mais uma tela de consulta.
 function PickerProdutos({ onEscolher, onFechar }: { onEscolher: (p: ItemERP) => void; onFechar: () => void }) {
+  useEsc(onFechar);
   const router = useRouter();
   const [filtros, setFiltros] = useState({ codigo: "", referencia: "", descricao: "" });
   const [itens, setItens] = useState<ItemERP[] | null>(null);

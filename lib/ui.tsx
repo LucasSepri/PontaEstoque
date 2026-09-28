@@ -3,6 +3,19 @@
 // precisam exatamente dos mesmos SVGs: duplicar path de ícone é como os dois
 // menus acabam com o mesmo item desenhado de formas diferentes.
 import type { ReactNode } from "react";
+import { useEffect } from "react";
+
+/** Fecha a camada aberta com ESC. Overlay sem isso é um beco sem saída no teclado. */
+export function useEsc(fecha: () => void, ativo = true) {
+  useEffect(() => {
+    if (!ativo) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") fecha();
+    };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [fecha, ativo]);
+}
 
 // Ícones desenhados no viewBox 24×24 e preenchidos com `currentColor`
 // (fill: currentColor no CSS) para herdarem a cor do texto sem `stroke`.
