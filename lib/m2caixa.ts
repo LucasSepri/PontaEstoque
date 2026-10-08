@@ -19,3 +19,16 @@ export function m2PorCaixa(descricao: string | null | undefined): number {
   const v = parseFloat(m[1].replace(",", "."));
   return isNaN(v) ? 0 : v;
 }
+
+// Critério dos filtros locais de m² e de caixas da tela /consulta.
+// Sem nenhum limite, tudo passa. `cxMin` conta caixas a partir do estoque em m²
+// (o ERP não expõe "quantidade de caixas"), então um produto sem m² por caixa
+// nunca satisfaz um filtro de caixas.
+export type LimiteCaixa = { m2Min?: number | null; m2Max?: number | null; cxMin?: number | null };
+
+export function combinaCaixa(m2: number, estoque: number, l: LimiteCaixa = {}): boolean {
+  if (l.m2Min != null && m2 < l.m2Min) return false;
+  if (l.m2Max != null && m2 > l.m2Max) return false;
+  if (l.cxMin != null && (m2 <= 0 || estoque / m2 < l.cxMin)) return false;
+  return true;
+}
