@@ -65,15 +65,21 @@ export async function pontaDeletar(codigoErp: string) {
   if (rows[0]?.foto_url) await apagarFoto(rows[0].foto_url);
 }
 
-// Fotos: salva em disco local (pasta public/fotos)
+// Fotos em disco local. Ficam em `fotos/` na raiz, e NÃO em `public/fotos/`:
+// o `next start` serve `public/` de um retrato tirado no boot, então um upload
+// gravado depois do start devolvia 404 para sempre. Fora do public/, quem serve
+// é a rota `app/fotos/[nome]/route.ts`, que lê o disco a cada request.
 import { writeFile, mkdir, unlink } from "node:fs/promises";
 import { join, normalize } from "node:path";
 
-const DIR_FOTOS = join(process.cwd(), "public", "fotos");
+export const DIR_FOTOS = join(process.cwd(), "fotos");
 
 export async function salvarFoto(fileBytes: Uint8Array, nomeArquivo: string, contentType: string) {
   await mkdir(DIR_FOTOS, { recursive: true });
-  const caminho = join(DIR_FOTOS, nomeArquivo);
+  // O nome vem do cliente: `normalize` + o prefixo abaixo impedem que "../" ou
+  // um caminho absoluto escapem do diretório de fotos.
+  const caminho = join(DIR_FOTOS, normalize("/" + nomeArquivo));
+  if (!caminho.startsWith(DIR_FOTOS + "/")) throw new Error("nome de arquivo invalido");
   await writeFile(caminho, fileBytes);
   return `/fotos/${nomeArquivo}`;
 }
@@ -82,10 +88,10 @@ export async function salvarFoto(fileBytes: Uint8Array, nomeArquivo: string, con
 export async function apagarFoto(caminhoUrl: string) {
   // Só aceitamos o que o upload gerou (`/fotos/...`). Foto vinda do ERP
   // (http) ou qualquer outro caminho é ignorada — e o normalize + prefixo
-  // impedem que "../" escape de public/fotos.
+  // impedem que "../" escape do diretório de fotos.
   const prefixo = "/fotos/";
   if (!caminhoUrl || !caminhoUrl.startsWith(prefixo)) return;
-  const alvo = normalize(join(process.cwd(), "public", caminhoUrl));
+  const alvo = normalize(join(process.cwd(), caminhoUrl));
   if (!alvo.startsWith(DIR_FOTOS + "/")) return;
   await unlink(alvo).catch(() => {});
 }

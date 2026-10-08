@@ -2074,6 +2074,10 @@ dialog.zoom-foto {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* O pan é feito em JS; se o browser puder tratar o gesto aqui, ele rouba o
+     pointermove antes de chegar no listener do dialog. `touch-action` é
+     avaliado no alvo do gesto, e o <img> não cobre a área toda. */
+  touch-action: none;
 }
 
 dialog.zoom-foto::backdrop {
@@ -2090,6 +2094,11 @@ dialog.zoom-foto::backdrop {
   /* `auto` e não `hidden`: é o que torna o scroll/pan possível quando a
      imagem fica maior que a área. */
   overflow: auto;
+  /* Sem isto o browser consome o gesto como zoom da própria página e a pinça
+     não chega no pointermove. `none` mata também o scroll nativo, que aqui é
+     substituído pelo pan em transform. */
+  touch-action: none;
+  overscroll-behavior: contain;
   padding: clamp(12px, 3vh, 40px);
   box-sizing: border-box;
 }
@@ -2105,6 +2114,8 @@ dialog.zoom-foto::backdrop {
   transition: transform 0.15s ease-out;
   user-select: none;
   -webkit-user-drag: none;
+  /* pinça de 2 dedos também dispara o zoom nativo se não for travado */
+  touch-action: none;
   cursor: zoom-in;
 }
 
@@ -2113,9 +2124,11 @@ dialog.zoom-foto::backdrop {
 }
 
 /* Durante o arraste a transição atrapalha: ela faz a imagem "escorregar" atrás
-   do cursor. O `:active` é o gatilho correto — um ref de arraste não
-   re-renderiza, então o estado em JS ficaria preso em "grab". */
-.zoom-area img.ampliada:active {
+   do cursor. O `:active` cobre o mouse; a classe cobre o resto — o
+   pointercancel do drag nativo não passa por `:active` e deixava o cursor
+   preso em `grab`. */
+.zoom-area img.ampliada:active,
+.zoom-area img.arrastando {
   transition: none;
   cursor: grabbing;
 }
