@@ -30,15 +30,23 @@ export async function GET(_req: Request, { params }: { params: { nome: string } 
     const caminho = join(DIR_FOTOS, nome);
     const info = await stat(caminho);
     if (!info.isFile()) return new Response("nao encontrado", { status: 404 });
+    // A URL é estável (<codigo_erp>.<ext>) e a foto pode ser trocada por outra
+    // do mesmo produto: com `immutable` o navegador servia a versão antiga por
+    // um ano e a troca nunca aparecia. O ETag sobre size+mtime mantém o cache
+    // (revalidar custa um 304, não os bytes) e troca a imagem assim que o
+    // arquivo muda em disco.
+    const etag = `W/"${info.size.toString(16)}-${Math.round(info.mtimeMs).toString(16)}"`;
+    const headers = {
+      "Content-Type": tipo,
+      "Content-Length": String(info.size),
+      "Cache-Control": "no-cache",
+      ETag: etag,
+    };
+    if (_req.headers.get("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers });
+    }
     const stream = createReadStream(caminho);
-    return new Response(stream as unknown as BodyInit, {
-      headers: {
-        "Content-Type": tipo,
-        "Content-Length": String(info.size),
-        // O nome do arquivo é <codigo_erp>.<ext>: mudou o arquivo, mudou a URL.
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-    });
+    return new Response(stream as unknown as BodyInit, { headers });
   } catch {
     return new Response("nao encontrado", { status: 404 });
   }

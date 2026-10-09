@@ -134,4 +134,41 @@ const tela = (s, px, py) => ({
   assert.equal(s.ajustar(0.1).escala, 1, "piso");
 }
 
-console.log("check_zoom_toque: 8 grupos de asserção OK");
+// --- 8. Arrasto contínuo: vários `move` acumulam, não só o último frame.
+// Cada passo de 20px tem de somar. Com a origem do arrasto reancorada a cada
+// move sem mover `ox` junto, o delta vale só o último passo e o pan trava
+// depois do primeiro frame — o sintoma "não consigo mover a imagem".
+{
+  const s = g();
+  s.ajustar(3);
+  s.down(1, 300, 400);
+  const traco = [];
+  for (let i = 1; i <= 5; i++) traco.push(s.move(1, 300 - i * 20, 400 - i * 10).pos);
+  assert.deepEqual(traco, [
+    { x: -20, y: -10 },
+    { x: -40, y: -20 },
+    { x: -60, y: -30 },
+    { x: -80, y: -40 },
+    { x: -100, y: -50 },
+  ], "5 passos de 20px somam 100px — o pan acompanha o dedo");
+}
+
+// --- 9. Arrasto depois do handoff pinça -> 1 dedo também é contínuo.
+{
+  const s = g();
+  s.down(1, 100, 400);
+  s.down(2, 300, 400);
+  s.move(1, 50, 400);
+  s.move(2, 350, 400);
+  s.up(1); // sobra o dedo 2, ancorado em (350, 400)
+  const base = s.estado().pos;
+  const t = [];
+  for (let i = 1; i <= 3; i++) t.push(s.move(2, 350 - i * 15, 400).pos);
+  assert.deepEqual(
+    t.map((p) => p.x - base.x),
+    [-15, -30, -45],
+    "após a pinça, o arrasto continua acumulando",
+  );
+}
+
+console.log("check_zoom_toque: 10 grupos de asserção OK");
