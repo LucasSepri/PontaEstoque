@@ -1274,6 +1274,74 @@
   }
 }
 
+/* Menu do usuário: <details> nativo, sem JS. summary vira o botão de ícone. */
+.menu-usuario {
+  position: relative;
+}
+
+.menu-usuario > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.menu-usuario > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-usuario[open] > summary {
+  background: var(--bg-3);
+  border-color: var(--line-2);
+  color: var(--txt-1);
+}
+
+.menu-lista {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 176px;
+  z-index: var(--z-modal);
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.55);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--txt-2);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.menu-item svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: currentColor;
+}
+
+.menu-item:hover {
+  background: var(--bg-3);
+  color: var(--txt-1);
+}
+
+.menu-item.perigo:hover {
+  background: var(--bad-soft);
+  color: #fca5a5;
+}
+
 /* =========================================================================
    FORMULÁRIOS
    ========================================================================= */

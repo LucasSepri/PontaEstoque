@@ -98,9 +98,14 @@ export function criarGesto(area: { left: number; top: number; width: number; hei
         return estado;
       }
       if (arrasto) {
-        const pos = { x: arrasto.ox + x - arrasto.x, y: arrasto.oy + y - arrasto.y };
-        arrasto = { x, y, ox: arrasto.ox, oy: arrasto.oy };
-        estado = { escala: estado.escala, pos };
+        // A origem do arrasto (`arrasto.x/y`) fica parada: o deslocamento sai
+        // inteiro do dedo desde o pointerdown. Reancorar `arrasto.x` a cada
+        // move sem mover `ox` junto faz o delta valer só o último frame, e o
+        // pan trava depois do primeiro passo.
+        estado = {
+          escala: estado.escala,
+          pos: { x: arrasto.ox + x - arrasto.x, y: arrasto.oy + y - arrasto.y },
+        };
         return estado;
       }
       return null;

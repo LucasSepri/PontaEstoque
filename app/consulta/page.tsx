@@ -285,12 +285,23 @@ export default function ConsultaPage() {
             <Ic d={ico.seta_esq} /> <span className="rotulo">Voltar ao Estoque</span>
           </button>
           <div className="topbar-sep" />
-          <button type="button" className="btn-icone" onClick={() => toast("info", "Perfil", "Sessão de " + (usuario || "—"))} title="Perfil" aria-label="Perfil">
-            <Ic d={ico.usuario} />
-          </button>
-          <button type="button" className="btn-icone perigo" onClick={sair} title="Sair" aria-label="Sair">
-            <Ic d={ico.sair} />
-          </button>
+          <details className="menu-usuario">
+            <summary className="btn-icone" title="Usuário" aria-label="Usuário">
+              <Ic d={ico.usuario} />
+            </summary>
+            <div className="menu-lista">
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => toast("info", "Perfil", "Sessão de " + (usuario || "—"))}
+              >
+                <Ic d={ico.usuario} /> Perfil
+              </button>
+              <button type="button" className="menu-item perigo" onClick={sair}>
+                <Ic d={ico.sair} /> Sair
+              </button>
+            </div>
+          </details>
         </Topbar>
 
         <main className="page">

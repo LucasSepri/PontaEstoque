@@ -90,11 +90,19 @@ function formatarBytes(b: number) {
   return (b / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
 }
 
-function urlDaFoto(p: { foto_url?: string; foto?: string; imagem?: string }) {
+// A URL da foto é estável (`/fotos/<codigo>.jpg`) e o `src` não muda quando o
+// arquivo é trocado: sem isso o card continuaria mostrando a imagem antiga
+// mesmo com a foto nova já salva. Um contador por código quebra o cache na
+// URL sem gravar versão no banco — some quando a aba fecha, que é o bastante.
+const fotoVersao: Record<string, number> = {};
+
+function urlDaFoto(p: { codigo_erp?: string; foto_url?: string; foto?: string; imagem?: string }) {
   const caminho = p.foto_url || p.foto || p.imagem;
   if (!caminho) return "";
   if (caminho.startsWith("http") || caminho.startsWith("data:image")) return caminho;
-  return caminho.startsWith("/") ? caminho : "/" + caminho;
+  const url = caminho.startsWith("/") ? caminho : "/" + caminho;
+  const v = p.codigo_erp ? fotoVersao[p.codigo_erp] : 0;
+  return v ? url + "?v=" + v : url;
 }
 
 // Foto de celular chega com 3-8 MB e resolução que ninguém chega a ver: o card
@@ -354,12 +362,23 @@ export default function SistemaPage() {
           >
             <Ic d={ico.atualizar} />
           </button>
-          <button type="button" className="btn-icone" onClick={() => toast("info", "Perfil", "Sessão de " + (usuario || "—"))} title="Perfil" aria-label="Perfil">
-            <Ic d={ico.usuario} />
-          </button>
-          <button type="button" className="btn-icone perigo" onClick={sair} title="Sair" aria-label="Sair">
-            <Ic d={ico.sair} />
-          </button>
+          <details className="menu-usuario">
+            <summary className="btn-icone" title="Usuário" aria-label="Usuário">
+              <Ic d={ico.usuario} />
+            </summary>
+            <div className="menu-lista">
+              <button
+                type="button"
+                className="menu-item"
+                onClick={() => toast("info", "Perfil", "Sessão de " + (usuario || "—"))}
+              >
+                <Ic d={ico.usuario} /> Perfil
+              </button>
+              <button type="button" className="menu-item perigo" onClick={sair}>
+                <Ic d={ico.sair} /> Sair
+              </button>
+            </div>
+          </details>
         </Topbar>
 
         <main className="page">
@@ -574,6 +593,8 @@ export default function SistemaPage() {
           onClose={() => setEditando(null)}
           onSalvo={() => {
             setEditando(null);
+            // A foto trocada precisa de URL nova para o <img> recarregar.
+            if (editando.codigo_erp) fotoVersao[editando.codigo_erp] = Date.now();
             toast("ok", "Alterações salvas", "Estoque atualizado com sucesso.");
             carregar(true);
           }}
