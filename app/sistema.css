@@ -635,6 +635,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* .chip-select: um <select> que parece chip. Precisa sobrescrever o select
+   global (largura 100%, chevron em url(), fundo de campo) nas duas
+   especificidades, por isso as regras repetidas com .chip na frente. */
+.chip-select,
+.chip.chip-select {
+  width: auto;
+  max-width: 260px;
+  padding: 7px 30px 7px 13px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  border-radius: var(--r-full);
+  background-color: var(--bg-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.chip-select:focus {
+  border-color: var(--line-2);
+  background-color: var(--bg-2);
+  box-shadow: none;
+}
+
+.chip-select:hover {
+  color: var(--txt-1);
+  border-color: var(--line-2);
+}
+
+.chip-select.chip--on:hover {
+  color: #dbeafe;
+}
+
 .chip--on .chip-count {
   background: rgba(59, 130, 246, 0.28);
   color: #dbeafe;
@@ -963,6 +998,26 @@
   color: #93c5fd;
 }
 
+/* O saldo do ERP é a referência da conferência: se ele não foi lido, o valor
+   fica apagado para não ser confundido com um zero legítimo. */
+.metrica--erp .metrica-valor {
+  color: var(--txt-2);
+}
+
+.metrica--erp:has(.metrica-nota) .metrica-valor {
+  color: #93c5fd;
+}
+
+.metrica-nota {
+  margin-top: 1px;
+  font-size: 10.5px;
+  color: var(--txt-4);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ---- Rodapé: preço + ações ------------------------------------------- */
 .card-pe {
   margin-top: auto;
@@ -1029,6 +1084,264 @@
 .divergencia--bad {
   color: var(--bad);
   background: var(--bad-soft);
+}
+
+/* Sobra no ERP: quase sempre uma caixa que não voltou para a prateleira. É
+   alerta, não erro — por isso âmbar em vez de vermelho. */
+.divergencia--sobra {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+/* Saldo ainda não lido do ERP: sem julgamento, só pendência de sincronismo. */
+.divergencia--idle {
+  color: var(--txt-4);
+  background: var(--bg-2);
+}
+
+.divergencia-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: currentColor;
+  color: var(--bg-0);
+}
+
+.divergencia-badge.divergencia--ok {
+  color: #06301f;
+}
+
+.divergencia-badge.divergencia--bad {
+  color: #3a0b0b;
+}
+
+.divergencia-badge.divergencia--sobra {
+  color: #3b2a06;
+}
+
+.divergencia-texto {
+  min-width: 0;
+  font-weight: 550;
+}
+
+.divergencia-frescor {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--txt-4);
+  opacity: 0.85;
+}
+
+.divergencia-frescor.badge--warn {
+  color: var(--warn);
+  opacity: 1;
+}
+
+.divergencia-frescor.badge--bad {
+  color: var(--bad);
+  opacity: 1;
+}
+
+/* badge--idle = nunca sincronizado (ou seja: o ERP nunca respondeu por este lote). */
+.divergencia-frescor.badge--idle {
+  color: var(--txt-4);
+  opacity: 1;
+}
+
+.divergencia-diag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid currentColor;
+  border-radius: var(--r-full);
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity var(--t-fast);
+}
+
+.divergencia-diag:hover {
+  opacity: 1;
+}
+
+.divergencia-diag svg {
+  width: 11px;
+  height: 11px;
+  transition: transform var(--t-fast);
+}
+
+.divergencia-diag[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* Aceitar a divergência é a ação que fecha o ciclo: por isso ela é a única
+   com cor própria, e o estado aceito fica verde para não parecer pendência. */
+.divergencia-diag--ok {
+  color: var(--ok);
+  border-color: var(--ok);
+  opacity: 1;
+}
+
+.divergencia-diag--aceita {
+  color: var(--ok);
+  border-color: transparent;
+  background: var(--ok-soft);
+  opacity: 1;
+}
+
+/* ---- Diagnóstico do lote --------------------------------------------- */
+/* Explica a divergência em vez de só apontá-la: situação do lote, filial e
+   reservado/trânsito. Carregado sob demanda — cada consulta custa ~1s no ERP. */
+.diag {
+  margin-top: 8px;
+  padding: 10px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border-radius: var(--r-sm);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+}
+
+.diag-bloco {
+  min-width: 0;
+}
+
+.diag-titulo {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--txt-4);
+}
+
+.diag-lote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+
+.diag-lote-nome {
+  font-weight: 650;
+  color: var(--txt-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-lote-filial {
+  color: var(--txt-4);
+}
+
+.diag-lote-saldo {
+  margin-left: auto;
+  font-weight: 650;
+  color: #93c5fd;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.diag-tabela th {
+  padding: 0 6px 5px 0;
+  text-align: right;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--txt-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.diag-tabela th:first-child,
+.diag-tabela th:last-child {
+  text-align: left;
+}
+
+.diag-tabela td {
+  padding: 5px 6px 5px 0;
+  text-align: right;
+  color: var(--txt-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.diag-tabela td:first-child,
+.diag-tabela td:last-child {
+  text-align: left;
+}
+
+.diag-tabela tr:last-child td {
+  border-bottom: 0;
+}
+
+/* A filial do lote da ponta é a que importa: o resto é contexto. */
+.diag-linha--on td {
+  color: var(--txt-1);
+  font-weight: 600;
+}
+
+.diag-nota {
+  margin-top: 7px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--warn);
+}
+
+.diag-vazio {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--txt-4);
+}
+
+.diag-vazio--erro {
+  color: var(--bad);
+}
+
+/* Melhorias no diagnóstico do modal */
+.modal-conteudo.largo .diag {
+  margin-top: 0;
+}
+
+.modal-conteudo.largo .diag-tabela {
+  font-size: 12px;
+}
+
+.modal-conteudo.largo .diag-tabela th {
+  font-size: 10.5px;
+  padding: 8px 10px;
+}
+
+.modal-conteudo.largo .diag-tabela td {
+  padding: 8px 10px;
+}
+
+.modal-conteudo.largo .diag-bloco {
+  margin-bottom: 20px;
+}
+
+.modal-conteudo.largo .diag-nota {
+  margin-top: 12px;
+  font-size: 12px;
 }
 
 /* ---- Badges ---------------------------------------------------------- */
