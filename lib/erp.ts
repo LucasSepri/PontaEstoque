@@ -4,8 +4,8 @@ import { emCache, limparCacheErp } from "@/lib/cacheErp";
 
 export { limparCacheErp };
 
-const ERP = process.env.ERP_URL || "http://SEU_IP_OU_DOMINIO:9999";
-const API = process.env.API_URL || "http://SEU_IP_OU_DOMINIO:9990";
+const ERP = process.env.ERP_URL || "";
+const API = process.env.API_URL || "";
 const TIMEOUT = Number(process.env.ERP_TIMEOUT || 25000);
 
 // Sessão do usuário ERP (single-user, como o original).

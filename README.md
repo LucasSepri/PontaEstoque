@@ -34,19 +34,17 @@ Em produção, veja `backup/MIGRACAO_VPS.md`.
 
 ## 2. Variáveis de ambiente
 
-Crie/edite `.env.local` na raiz:
+Copie `.env.example` para `.env.local` e ajuste as variáveis:
 
+```bash
+cp .env.example .env.local
 ```
-DATABASE_URL=postgres://ponta_app:senha@localhost:5432/ponta_estoque
-ERP_URL=http://SEU_IP_OU_DOMINIO:9999
-API_URL=http://SEU_IP_OU_DOMINIO:9990
-ERP_TIMEOUT=25000
-ERP_CACHE_TTL=120000
-```
+
+Veja `.env.example` para a lista completa de variáveis.
 
 | Variável | Uso | Padrão |
 |---|---|---|
-| `DATABASE_URL` | Conexão Postgres (tabelas `pontas`, `imagens`) | `postgres://ponta_app:senha@localhost:5432/ponta_estoque` |
+| `DATABASE_URL` | Conexão Postgres (tabelas `pontas`, `imagens`) | `postgres://USUARIO:SENHA@localhost:5432/nome_do_banco` |
 | `ERP_URL` | Endereço do ERP (App Server - porta 9999) | `http://SEU_IP_OU_DOMINIO:9999` |
 | `API_URL` | Endereço da API (API Server - porta 9990) | `http://SEU_IP_OU_DOMINIO:9990` |
 | `ERP_TIMEOUT` | Timeout das chamadas ao ERP (ms) | `25000` |
