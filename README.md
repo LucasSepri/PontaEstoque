@@ -39,14 +39,32 @@ Crie/edite `.env.local` na raiz:
 ```
 DATABASE_URL=postgres://ponta_app:senha@localhost:5432/ponta_estoque
 ERP_URL=http://SEU_IP_OU_DOMINIO:9999
+API_URL=http://SEU_IP_OU_DOMINIO:9990
 ERP_TIMEOUT=25000
+ERP_CACHE_TTL=120000
 ```
 
 | Variável | Uso | Padrão |
 |---|---|---|
 | `DATABASE_URL` | Conexão Postgres (tabelas `pontas`, `imagens`) | `postgres://ponta_app:senha@localhost:5432/ponta_estoque` |
-| `ERP_URL` | Endereço do ERP | `http://SEU_IP_OU_DOMINIO:9999` |
+| `ERP_URL` | Endereço do ERP (App Server - porta 9999) | `http://SEU_IP_OU_DOMINIO:9999` |
+| `API_URL` | Endereço da API (API Server - porta 9990) | `http://SEU_IP_OU_DOMINIO:9990` |
 | `ERP_TIMEOUT` | Timeout das chamadas ao ERP (ms) | `25000` |
+| `ERP_CACHE_TTL` | TTL do cache de leitura do ERP (ms) | `120000` |
+
+## Arquitetura Dual-Server
+
+O sistema MicroUniverso Vendas expõe dois servidores independentes:
+
+| Servidor | Porta | Autenticação | Uso |
+|---|---|---|---|
+| **App Server** | 9999 | Cookie `ASP.NET_SessionId` | Login, consulta de produtos, lotes, pontas, upload |
+| **API Server** | 9990 | Bearer Token (extraído do HTML) | Grid, orçamentos, clientes, vendedores, cupons, agentes, atendimentos |
+
+- O token da API (servidor 9990) é **diferente** do token do app (servidor 9999)
+- Após login bem-sucedido no App Server, o token da API é extraído automaticamente do HTML da home page via regex `token:\s*'([^']+)'`
+- O token é armazenado em memória (`globalThis`) e renovado automaticamente em caso de expiração
+- Todas as chamadas ao API Server usam `Authorization: Bearer {apiToken}`
 
 ## 3. Rodar
 
@@ -69,14 +87,39 @@ npm start
 1. `/` — login (valida no ERP)
 2. `/sistema` — busca de pontas, apontamento de lotes, upload de fotos
 
+## Documentação Complementar
+
+Os seguintes arquivos no repositório contêm detalhes de engenharia reversa do ERP:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `API_ENDPOINTS_SUMMARY.md` | Lista de 519 endpoints descobertos no bundle JS do ERP |
+| `REVERSE_ENGINEERING_REPORT.md` | Relatório completo de análise do site MicroUniverso Vendas |
+
+## Autenticação com o ERP
+
+O ERP é ASP.NET e autentica por cookie `ASP.NET_SessionId`; `lib/erp.ts` faz
+o login, guarda o cookie e o reenvia. Resposta em HTML = sessão expirada (o ERP
+não devolve 401).
+
+**Dois servidores, dois tokens:**
+
+| Servidor | Porta | Autenticação | Uso |
+|---|---|---|---|
+| **App Server** | 9999 | Cookie `ASP.NET_SessionId` | Login, consulta de produtos, lotes, pontas, upload |
+| **API Server** | 9990 | Bearer Token (extraído do HTML) | Grid, orçamentos, clientes, vendedores, cupons, agentes, atendimentos |
+
+- O token da API (servidor 9990) é **diferente** do token do app (servidor 9999)
+- Após login bem-sucedido no App Server, o token da API é extraído automaticamente
+  do HTML da home page via regex `token:\s*'([^']+)'`
+- O token é armazenado em memória (`globalThis`) e renovado automaticamente em caso de expiração
+- Todas as chamadas ao API Server usam `Authorization: Bearer {apiToken}`
+
 ## Notas
 
-- **Não precisa de Python.** O backend inteiro é o Next (rotas em `app/api/`). O
-  `servidor_teste.py` da raiz do workspace é a versão antiga, mantida só como
-  referência de quais endpoints o ERP aceita — não é executado.
-- O ERP é ASP.NET e autentica por cookie `ASP.NET_SessionId`; `lib/erp.ts` faz
-  o login, guarda o cookie e o reenvia. Resposta em HTML = sessão expirada (o ERP
-  não devolve 401).
+- O backend inteiro é o Next (rotas em `app/api/`).
+  Arquivos `.py` antigos podem ter existido como referência, mas não estão
+  mais no repositório — o código atual é 100% TypeScript.
 - Sessão em memória (`lib/erp.ts`): single-user, reinicia ao reiniciar o app.
 - Fotos em disco (`fotos/` na raiz), servidas por `app/fotos/[nome]/route.ts`.
   Fora do `public/` de propósito: o retrato de `public/` que o `next start` faz
