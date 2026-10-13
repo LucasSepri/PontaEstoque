@@ -8,6 +8,26 @@ const pool = new Pool({
   max: 5,
 });
 
+// Garante que a coluna conferido_em existe (idempotente).
+// Se o ALTER TABLE falhar (ex.: sem permissão), não memoiza a falha:
+let schemaPronto: boolean | null = null;
+async function garantirSchema() {
+  if (schemaPronto) return schemaPronto;
+  try {
+    await pool.query(
+      `ALTER TABLE pontas ADD COLUMN IF NOT EXISTS conferido_em timestamptz`
+    );
+    schemaPronto = true;
+  } catch {
+    schemaPronto = null;
+    throw new Error("schema nao pronto");
+  }
+  return schemaPronto;
+}
+
+// Chama a garantia de schema no primeiro uso.
+garantirSchema().catch(() => {});
+
 export async function pontasListar(): Promise<any[]> {
   const { rows } = await pool.query("SELECT * FROM pontas ORDER BY id");
   return rows;
@@ -38,6 +58,8 @@ export async function pontaAtualizar(codigoErp: string, campos: Record<string, u
   return rows[0] ?? null;
 }
 
+
+
 // Troca a foto de uma ponta e apaga o arquivo antigo. O CTE `anterior` é
 // obrigatório: `RETURNING` num UPDATE devolve a linha já alterada, então
 // perguntar o valor velho ali devolveria a foto nova e o `unlink` nunca
@@ -55,6 +77,16 @@ export async function pontaTrocarFoto(codigoErp: string, novaFoto: string) {
   // extensão sobrescreve `codigo.jpg` e apagar depois deixaria o card sem foto.
   if (rows[0].anterior && rows[0].anterior !== novaFoto) await apagarFoto(rows[0].anterior);
   return rows[0].nova;
+}
+
+// Marca a ponta como conferida (saldo do ERP aceito pelo operador).
+// Zera a divergência sem mexer na quantidade contada.
+export async function pontaConferir(codigoErp: string, quando: string) {
+  const { rows } = await pool.query(
+    `UPDATE pontas SET conferido_em = $1 WHERE codigo_erp = $2 RETURNING *`,
+    [quando, codigoErp]
+  );
+  return rows[0] ?? null;
 }
 
 // Apaga a linha e a foto junto. A foto é removida aqui, e não no DELETE da API,
