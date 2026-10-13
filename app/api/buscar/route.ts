@@ -30,7 +30,16 @@ export async function GET(req: Request) {
   const m2Max = num(p.get("m2_max"));
   const cxMin = num(p.get("cx_min"));
   const temFiltroCaixa = m2Min != null || m2Max != null || cxMin != null;
-  if (!codigo && !referencia && !descricao) return json({ erro: "informe codigo, referencia ou descricao" }, 400);
+  const temFiltroAvancado =
+    !!(
+      (p.get("classe") || "").trim() ||
+      (p.get("fabricante") || "").trim() ||
+      (p.get("modelo") || "").trim() ||
+      (p.get("texto_tecnico") || "").trim() ||
+      p.get("oferta") === "1"
+    );
+  if (!codigo && !referencia && !descricao && !temFiltroAvancado)
+    return json({ erro: "informe codigo, referencia, descricao ou um filtro avancado" }, 400);
 
   const base = {
     codigo,
@@ -40,6 +49,13 @@ export async function GET(req: Request) {
     estoque_disponivel: p.get("estoque") === "1",
     estoque_cd: p.get("estoque_cd") === "1",
     estoque_outras: p.get("estoque_outras") === "1",
+    // Filtros novos, mesmos da tela "Consultar Produtos" do ERP.
+    disponibilidade: p.get("disponibilidade")?.split(",").filter(Boolean),
+    classe: p.get("classe") || undefined,
+    fabricante: p.get("fabricante") || undefined,
+    modelo: p.get("modelo") || undefined,
+    texto_tecnico: p.get("texto_tecnico") || undefined,
+    oferta: p.get("oferta") === "1",
   };
 
   try {

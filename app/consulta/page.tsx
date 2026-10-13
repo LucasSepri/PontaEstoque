@@ -36,6 +36,13 @@ type Filtros = {
   estoque: boolean;
   estoque_outras: boolean;
   estoque_cd: boolean;
+  // Filtros novos, mesmos da tela "Consultar Produtos" do ERP.
+  disponibilidade: string[];
+  classe: string;
+  fabricante: string;
+  modelo: string;
+  texto_tecnico: string;
+  oferta: boolean;
   // m² por caixa (de/até) e quantidade mínima de caixas. O ERP não filtra por
   // nenhum desses: quem filtra é o servidor, varrendo o catálogo inteiro
   // (lib/catalogo.ts). Por isso a busca precisa ser reenviada ao mudar o campo.
@@ -52,6 +59,12 @@ const VAZIO: Filtros = {
   estoque: false,
   estoque_outras: false,
   estoque_cd: false,
+  disponibilidade: [],
+  classe: "",
+  fabricante: "",
+  modelo: "",
+  texto_tecnico: "",
+  oferta: false,
   m2_min: "",
   m2_max: "",
   cx_min: "",
@@ -72,6 +85,21 @@ const CHECKS: { id: "estoque" | "estoque_outras" | "estoque_cd"; rotulo: string;
   { id: "estoque_outras", rotulo: "Outras filiais", idDom: "PesquisaProdutos_EstoqueDisponivelOutrasFiliais" },
   { id: "estoque_cd", rotulo: "CD (centro de distribuição)", idDom: "PesquisaProdutos_EstoqueDisponivelCD" },
 ];
+
+// Códigos pré-marcados pela tela do ERP (mesmos de lib/erp.ts). A busca sem
+// filtro de disponibilidade reproduz o resultado do ERP.
+const DISPONIBILIDADES_PADRAO = ["32260", "21081", "21073", "21077", "21069", "29105", "32246", "32410"];
+
+type Disponibilidade = { codigo: string; nome: string; selecionado: boolean };
+
+// Abas do modal de detalhe — mesmas seções que a tela do ERP abre para o produto.
+const ABAS = [
+  { id: "lotes", rotulo: "Lotes" },
+  { id: "estoque", rotulo: "Estoque por filial" },
+  { id: "similares", rotulo: "Similares" },
+  { id: "agregados", rotulo: "Agregados" },
+  { id: "ofertas", rotulo: "Ofertas" },
+] as const;
 
 function num(n: number | undefined) {
   return (n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 });
@@ -104,6 +132,10 @@ export default function ConsultaPage() {
   const [lotesErro, setLotesErro] = useState("");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [menuAberto, setMenuAberto] = useState(false);
+  const [disponibilidades, setDisponibilidades] = useState<Disponibilidade[] | null>(null);
+  const [painel, setPainel] = useState<{ tipo: "estoque" | "similares" | "agregados" | "ofertas"; dados: unknown } | null>(null);
+  const [painelErro, setPainelErro] = useState("");
+  const [aba, setAba] = useState<(typeof ABAS)[number]["id"]>("lotes");
 
   useEsc(() => setDetalhe(null), !!detalhe);
   useEsc(() => setMenuAberto(false), menuAberto);
@@ -121,6 +153,16 @@ export default function ConsultaPage() {
       return;
     }
     setUsuario(u);
+    // Opções do filtro de disponibilidade, direto do ERP (mesma chamada da tela dele).
+    fetch("/api/disponibilidades")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setDisponibilidades(d);
+          setFiltros((f) => ({ ...f, disponibilidade: d.filter((x) => x.selecionado).map((x) => x.codigo) }));
+        }
+      })
+      .catch(() => {});
   }, [router]);
 
   const set = <K extends keyof Filtros>(k: K, v: Filtros[K]) => {
@@ -146,6 +188,12 @@ export default function ConsultaPage() {
         if (filtros.estoque) q.set("estoque", "1");
         if (filtros.estoque_cd) q.set("estoque_cd", "1");
         if (filtros.estoque_outras) q.set("estoque_outras", "1");
+        if (filtros.disponibilidade.length) q.set("disponibilidade", filtros.disponibilidade.join(","));
+        if (filtros.classe) q.set("classe", filtros.classe);
+        if (filtros.fabricante) q.set("fabricante", filtros.fabricante);
+        if (filtros.modelo) q.set("modelo", filtros.modelo);
+        if (filtros.texto_tecnico) q.set("texto_tecnico", filtros.texto_tecnico);
+        if (filtros.oferta) q.set("oferta", "1");
         if (filtros.m2_min) q.set("m2_min", filtros.m2_min);
         if (filtros.m2_max) q.set("m2_max", filtros.m2_max);
         if (filtros.cx_min) q.set("cx_min", filtros.cx_min);
@@ -184,8 +232,19 @@ export default function ConsultaPage() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!filtros.codigo.trim() && !filtros.referencia.trim() && !filtros.descricao.trim()) {
-      setErro("Informe ao menos código, referência ou descrição.");
+    // Só código/referência/descrição não é mais obrigatório: o ERP pesquisa por
+    // qualquer combinação de filtros (disponibilidade, classe, oferta…).
+    if (
+      !filtros.codigo.trim() &&
+      !filtros.referencia.trim() &&
+      !filtros.descricao.trim() &&
+      !filtros.classe.trim() &&
+      !filtros.fabricante.trim() &&
+      !filtros.modelo.trim() &&
+      !filtros.texto_tecnico.trim() &&
+      !filtros.oferta
+    ) {
+      setErro("Informe ao menos código, referência ou descrição (ou use um filtro avançado).");
       setItens(null);
       return;
     }
@@ -208,8 +267,11 @@ export default function ConsultaPage() {
 
   async function abrirLotes(p: Item) {
     setDetalhe(p);
+    setAba("lotes");
     setLotes(null);
     setLotesErro("");
+    setPainel(null);
+    setPainelErro("");
     try {
       const resp = await fetch("/api/lotes?codigo=" + encodeURIComponent(p.codigo));
       const d = await resp.json().catch(() => ({}));
@@ -223,6 +285,26 @@ export default function ConsultaPage() {
     } catch (e: any) {
       setLotes(null);
       setLotesErro(e?.message || "não foi possível listar os lotes");
+    }
+  }
+
+  // Painéis do produto (estoque por filial, similares, agregados, ofertas) — mesmas
+  // chamadas que a tela do ERP faz ao abrir o item.
+  async function abrirPainel(tipo: "estoque" | "similares" | "agregados" | "ofertas", p: Item) {
+    setPainel(null);
+    setPainelErro("");
+    try {
+      const resp = await fetch(`/api/produto?tipo=${tipo}&codigo=` + encodeURIComponent(p.codigo));
+      const d = await resp.json().catch(() => ({}));
+      if (resp.status === 401) {
+        sessionStorage.removeItem("ponta_usuario");
+        router.replace("/");
+        return;
+      }
+      if (!resp.ok) throw new Error(d.erro || "falha ao consultar o ERP");
+      setPainel({ tipo, dados: d.itens || [] });
+    } catch (e: any) {
+      setPainelErro(e?.message || "não foi possível consultar o ERP");
     }
   }
 
@@ -259,6 +341,12 @@ export default function ConsultaPage() {
     filtros.descricao ||
     filtros.ordem !== "ALFABETICA" ||
     checksAtivos ||
+    filtros.disponibilidade.length ||
+    filtros.classe ||
+    filtros.fabricante ||
+    filtros.modelo ||
+    filtros.texto_tecnico ||
+    filtros.oferta ||
     filtros.m2_min ||
     filtros.m2_max ||
     filtros.cx_min
@@ -385,6 +473,92 @@ export default function ConsultaPage() {
                   {c.rotulo}
                 </label>
               ))}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  id="PesquisaProdutos_ProdutoOferta"
+                  checked={filtros.oferta}
+                  onChange={(e) => set("oferta", e.target.checked)}
+                />
+                Produto em oferta
+              </label>
+            </div>
+
+            <div className="filtros-linha">
+              <div className="campo" style={{ flex: "2 1 320px" }}>
+                <label htmlFor="PesquisaProdutos_Disponibilidade">Disponibilidade</label>
+                <div className="chips" id="PesquisaProdutos_Disponibilidade">
+                  {(disponibilidades || []).map((d) => (
+                    <label className="check" key={d.codigo}>
+                      <input
+                        type="checkbox"
+                        checked={filtros.disponibilidade.includes(d.codigo)}
+                        onChange={(e) =>
+                          set(
+                            "disponibilidade",
+                            e.target.checked
+                              ? [...filtros.disponibilidade, d.codigo]
+                              : filtros.disponibilidade.filter((c) => c !== d.codigo)
+                          )
+                        }
+                      />
+                      {d.nome}
+                    </label>
+                  ))}
+                  {!disponibilidades && <span className="dica">Carregando opções do ERP…</span>}
+                </div>
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_Classe">Classe</label>
+                <input
+                  id="PesquisaProdutos_Classe"
+                  maxLength={7}
+                  inputMode="numeric"
+                  placeholder="999.999"
+                  value={filtros.classe}
+                  onChange={(e) => set("classe", e.target.value.replace(/[^\d.]/g, ""))}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_CodigoFabricante">Fabricante</label>
+                <input
+                  id="PesquisaProdutos_CodigoFabricante"
+                  maxLength={30}
+                  placeholder="Cód. fabricante"
+                  value={filtros.fabricante}
+                  onChange={(e) => set("fabricante", e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="filtros-linha">
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_ModeloProduto">Modelo</label>
+                <input
+                  id="PesquisaProdutos_ModeloProduto"
+                  maxLength={30}
+                  placeholder="Modelo do produto"
+                  value={filtros.modelo}
+                  onChange={(e) => set("modelo", e.target.value)}
+                />
+              </div>
+              <div className="campo">
+                <label htmlFor="PesquisaProdutos_TextoTecnico">Texto técnico</label>
+                <input
+                  id="PesquisaProdutos_TextoTecnico"
+                  maxLength={100}
+                  placeholder="Texto técnico"
+                  value={filtros.texto_tecnico}
+                  onChange={(e) => set("texto_tecnico", e.target.value)}
+                />
+              </div>
+              <div className="campo" style={{ flex: "2 1 200px" }}>
+                <small className="dica">
+                  Disponibilidade, classe, fabricante, modelo, texto técnico e oferta são os
+                  mesmos filtros da tela &quot;Consultar Produtos&quot; do ERP — a chamada vai com
+                  o corpo idêntico ao do sistema.
+                </small>
+              </div>
             </div>
 
             <div className="filtros-linha">
@@ -622,29 +796,110 @@ export default function ConsultaPage() {
             <h2>
               <Ic d={ico.camadas} /> {detalhe.codigo} — {tituloLimpo(detalhe.descricao)}
             </h2>
-            {lotesErro && <div className="aviso">{lotesErro}</div>}
-            {!lotes && !lotesErro && (
+
+            <div className="filtros-checks" style={{ marginBottom: 12 }}>
+              {ABAS.map((a) => (
+                <button
+                  type="button"
+                  key={a.id}
+                  className={"btn mini" + (aba === a.id ? "" : " secundario")}
+                  onClick={() => {
+                    setAba(a.id);
+                    if (a.id !== "lotes" && (!painel || painel.tipo !== a.id)) abrirPainel(a.id, detalhe);
+                  }}
+                >
+                  {a.rotulo}
+                </button>
+              ))}
+            </div>
+
+            {aba === "lotes" && (
+              <>
+                {lotesErro && <div className="aviso">{lotesErro}</div>}
+                {!lotes && !lotesErro && (
+                  <div className="mensagem">
+                    <div className="spinner" />
+                    <div>Carregando lotes do ERP…</div>
+                  </div>
+                )}
+                {lotes && lotes.length === 0 && <div className="mensagem">Produto sem lotes (estoque único).</div>}
+                {lotes && lotes.length > 0 && (
+                  <div className="metric-row">
+                    {lotes.map((l) => (
+                      <div className="metrica" key={l.lote + (l.filial || "")}>
+                        <div className="metrica-rotulo">{l.filial ? "Filial " + l.filial : "Lote"}</div>
+                        <div className="metrica-valor" style={{ fontSize: 19 }}>
+                          {l.lote}
+                        </div>
+                        <div className="metrica-valor" style={{ fontSize: 15, color: "var(--ok)", marginTop: 2 }}>
+                          {num(l.disponivel)} {detalhe.unidade || "m²"} disponíveis
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {aba !== "lotes" && painelErro && <div className="aviso">{painelErro}</div>}
+            {aba !== "lotes" && !painel && !painelErro && (
               <div className="mensagem">
                 <div className="spinner" />
-                <div>Carregando lotes do ERP…</div>
+                <div>Consultando o ERP…</div>
               </div>
             )}
-            {lotes && lotes.length === 0 && <div className="mensagem">Produto sem lotes (estoque único).</div>}
-            {lotes && lotes.length > 0 && (
+
+            {painel?.tipo === "estoque" && (
               <div className="metric-row">
-                {lotes.map((l) => (
-                  <div className="metrica" key={l.lote + (l.filial || "")}>
-                    <div className="metrica-rotulo">{l.filial ? "Filial " + l.filial : "Lote"}</div>
-                    <div className="metrica-valor" style={{ fontSize: 19 }}>
-                      {l.lote}
-                    </div>
-                    <div className="metrica-valor" style={{ fontSize: 15, color: "var(--ok)", marginTop: 2 }}>
-                      {num(l.disponivel)} {detalhe.unidade || "m²"} disponíveis
+                {(painel.dados as { filial: string; disponivel: number }[]).map((f) => (
+                  <div className="metrica" key={f.filial}>
+                    <div className="metrica-rotulo">Filial {f.filial}</div>
+                    <div className="metrica-valor" style={{ fontSize: 19 }}>{num(f.disponivel)}</div>
+                    <div className="metrica-valor" style={{ fontSize: 13, color: "var(--txt-3)", marginTop: 2 }}>
+                      {detalhe.unidade || "un"} disponíveis
                     </div>
                   </div>
                 ))}
+                {(painel.dados as unknown[]).length === 0 && <div className="mensagem">Sem estoque por filial.</div>}
               </div>
             )}
+
+            {(painel?.tipo === "similares" || painel?.tipo === "agregados") && (
+              <div className="metric-row">
+                {(painel.dados as Item[]).map((s) => (
+                  <div className="metrica" key={s.codigo}>
+                    <div className="metrica-rotulo">{s.codigo}</div>
+                    <div className="metrica-valor" style={{ fontSize: 15 }}>{tituloLimpo(s.descricao) || vazio}</div>
+                    <div className="metrica-valor" style={{ fontSize: 13, color: "var(--txt-3)", marginTop: 2 }}>
+                      {num(s.estoque)} {s.unidade || "un"}
+                    </div>
+                  </div>
+                ))}
+                {(painel.dados as unknown[]).length === 0 && (
+                  <div className="mensagem">Nenhum {painel.tipo === "similares" ? "similar" : "agregado"} cadastrado.</div>
+                )}
+              </div>
+            )}
+
+            {painel?.tipo === "ofertas" && (
+              <div className="metric-row">
+                {(painel.dados as { descricao: string; inicio: string; fim: string; filiais: string[] }[]).map((o, k) => (
+                  <div className="metrica" key={k}>
+                    <div className="metrica-rotulo">{o.descricao || "Oferta"}</div>
+                    <div className="metrica-valor" style={{ fontSize: 15 }}>
+                      {o.inicio ? o.inicio.slice(0, 10) : "—"} a {o.fim ? o.fim.slice(0, 10) : "—"}
+                    </div>
+                    {o.filiais.length > 0 && (
+                      <div className="metrica-valor" style={{ fontSize: 13, color: "var(--txt-3)", marginTop: 2 }}>
+                        Filiais {o.filiais.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(painel.dados as unknown[]).length === 0 && <div className="mensagem">Produto sem oferta vigente.</div>}
+              </div>
+            )}
+
             <div className="modal-acoes">
               <button type="button" className="btn secundario" onClick={() => setDetalhe(null)}>
                 Fechar

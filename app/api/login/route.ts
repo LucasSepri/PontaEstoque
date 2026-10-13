@@ -1,4 +1,4 @@
-import { erpLogin, setSessao, json } from "@/lib/erp";
+import { erpLogin, setSessao, json, fetchApiToken } from "@/lib/erp";
 
 export async function POST(req: Request) {
   const corpo = await req.json().catch(() => ({}));
@@ -12,6 +12,13 @@ export async function POST(req: Request) {
     if (data.Status === "SUCESSO") {
       setSessao({ usuario, senha });
       console.log("Login ERP:", usuario);
+      // Buscar token da API (servidor 9990) após login bem-sucedido
+      try {
+        await fetchApiToken();
+        console.log("Token da API obtido com sucesso");
+      } catch (e) {
+        console.warn("Falha ao obter token da API:", e);
+      }
     }
     return json(data);
   } catch (e: any) {

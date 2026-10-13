@@ -1,22 +1,54 @@
 import { erpBuscar, erpLotes, getSessao, json } from "@/lib/erp";
-import { pontasListar, pontaAtualizar, pontaDeletar, pontaInserir, pontaTrocarFoto } from "@/lib/db";
+import { pontasListar, pontaAtualizar, pontaDeletar, pontaInserir, pontaTrocarFoto, pontaConferir } from "@/lib/db";
 
 export async function GET() {
   if (!getSessao()) return json({ erro: "nao logado" }, 401);
   try {
     const pontas = await pontasListar();
     // Sincroniza estoque com o ERP em paralelo. Antes era sequencial: ~11s por ponta
-    // deixava a requisição passar de 40s e o proxy/proxy cortava. Lote zerado => deleta ponta.
+    // deixava a requisição passar de 40s e o proxy cortava. Lote zerado => deleta ponta.
+    // O cache serve o poll de 60s da tela quase de graça; só quando o lote dá zero é
+    // que vale gastar uma chamada fresca, porque aí a decisão é apagar registro.
     const sincronizadas = await Promise.all(
       pontas.map(async (p: any) => {
         try {
-          const lotes = await erpLotes(p.codigo_erp);
           const loteSel = String(p.lote || "").trim();
-          const loteInfo = lotes.find((l: any) => l.lote === loteSel);
-          const qtd = loteInfo ? loteInfo.disponivel : 0;
-          if (qtd <= 0) return { remover: true as const, codigo: p.codigo_erp };
-          if (qtd !== p.estoque_erp) {
-            const campos = { estoque_erp: qtd, sincronizado_em: new Date().toISOString() };
+          // Três desfechos distintos, e a diferença importa: o ERP devolve a
+          // lista de lotes do produto, então "não achei o lote" pode ser lote
+          // renomeado, digitado errado ou já excluído — nada disso é estoque
+          // zerado. Tratar os dois como zero apagava a ponta e a foto do
+          // usuário por causa de um typo no campo Lote.
+          const ler = (ls: any[]) => {
+            if (!loteSel) return { achou: false, disponivel: 0 };
+            const info = ls.find((l: any) => l.lote === loteSel);
+            return info
+              ? { achou: true, disponivel: Number(info.disponivel) || 0 }
+              : { achou: false, disponivel: 0 };
+          };
+          let r = ler(await erpLotes(p.codigo_erp));
+          if (!r.achou || r.disponivel <= 0) r = ler(await erpLotes(p.codigo_erp, true));
+          // Sem lote cadastrado não dá para conferir nada: mantém o registro.
+          if (!loteSel) return { remover: false as const };
+          if (!r.achou) {
+            // Antes isto zerava e apagava. Agora só marca o saldo como não lido
+            // (null) para a tela cobrar a correção do lote no cadastro.
+            if (p.estoque_erp !== null) {
+              const campos = { estoque_erp: null, sincronizado_em: new Date().toISOString() };
+              await pontaAtualizar(p.codigo_erp, campos);
+              Object.assign(p, campos);
+            }
+            return { remover: false as const };
+          }
+          if (r.disponivel <= 0) return { remover: true as const, codigo: p.codigo_erp };
+          // Comparação numérica obrigatória: `estoque_erp` é `numeric` e o pg
+          // devolve string, então `!==` dava sempre verdadeiro e o sync
+          // reescrevia a linha a cada poll — o que zeraria `conferido_em`.
+          if (r.disponivel !== Number(p.estoque_erp)) {
+            const campos = {
+              estoque_erp: r.disponivel,
+              sincronizado_em: new Date().toISOString(),
+              conferido_em: null,
+            };
             await pontaAtualizar(p.codigo_erp, campos);
             Object.assign(p, campos);
           }
@@ -84,6 +116,8 @@ export async function POST(req: Request) {
 // PUT edita os campos que o usuário controls: metragem, lote e foto. O
 // codigo_erp é a identidade da ponta (chave do update e do nome do arquivo de
 // foto), então trocar o produto exigiria apagar e cadastrar de novo.
+// Também aceita `conferido_em` para marcar a conferência aceita (sem mexer na
+// quantidade contada).
 export async function PUT(req: Request) {
   if (!getSessao()) return json({ erro: "nao logado" }, 401);
   const corpo = await req.json().catch(() => ({}));
@@ -98,7 +132,20 @@ export async function PUT(req: Request) {
   }
   if (corpo.lote !== undefined) campos.lote = String(corpo.lote || "").trim();
   const novaFoto = corpo.foto ? String(corpo.foto).trim() : "";
-  if (Object.keys(campos).length === 0 && !novaFoto) return json({ erro: "nada para atualizar" }, 400);
+
+  // Conferência aceita: carimba conferido_em no servidor (não confia no cliente).
+  const conferir = corpo.conferido_em !== undefined;
+  if (conferir) {
+    const quando = new Date().toISOString();
+    if (!(await pontaConferir(codigo, quando))) {
+      return json({ erro: "ponta nao encontrada" }, 404);
+    }
+  }
+
+  // Se só veio conferido_em, não cai no "nada para atualizar".
+  if (Object.keys(campos).length === 0 && !novaFoto && !conferir) {
+    return json({ erro: "nada para atualizar" }, 400);
+  }
 
   try {
     // A foto vai por fora porque só ela precisa do arquivo antigo em disco:
