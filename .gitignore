@@ -5,3 +5,4 @@ node_modules
 # Fotos de produto são gravadas em runtime por /api/upload; não versionar.
 fotos/*
 !fotos/.gitkeep
+tsconfig.tsbuildinfo
